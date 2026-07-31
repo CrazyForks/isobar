@@ -175,11 +175,27 @@ target_link_libraries(isobar-gui PRIVATE isobar_core)
 # pkg-config mode (a single target covering both modules).
 if(ISOBAR_FLTK_MODE STREQUAL "fltk-config")
     target_compile_options(isobar-gui PRIVATE ${FLTK_CXXFLAGS})
-    # Pass the whole link line through the shell so -weak_framework Foo stays
-    # paired (separate_arguments would split them and break the link).
-    target_link_options(isobar-gui PRIVATE "SHELL:${FLTK_LDFLAGS}")
+    # On macOS the fltk-config link line has paired flags (-weak_framework Foo)
+    # that whitespace-splitting would break, so pass it whole via SHELL: in a
+    # link OPTION (ld64 is two-pass, so option ordering doesn't matter).
+    # On Linux, GNU ld is single-pass: a link OPTION lands BEFORE the .o files,
+    # leaving FLTK symbols unresolved. So split into a list there and feed it
+    # through target_link_libraries, which CMake emits AFTER the objects.
+    if(APPLE)
+        target_link_options(isobar-gui PRIVATE "SHELL:${FLTK_LDFLAGS}")
+    else()
+        separate_arguments(FLTK_LDFLAGS_LIST UNIX_COMMAND "${FLTK_LDFLAGS}")
+        target_link_libraries(isobar-gui PRIVATE ${FLTK_LDFLAGS_LIST})
+    endif()
 elseif(ISOBAR_FLTK_MODE STREQUAL "config")
-    target_link_libraries(isobar-gui PRIVATE fltk fltk_images)
+    # FLTK 1.4 exports namespaced aliases (fltk::fltk, fltk::images); 1.3's
+    # CMake config exports the unnamespaced fltk/fltk_images. vcpkg ships 1.4.
+    # fltk::images pulls in Fl_PNG_Image + its png/jpeg/z deps automatically.
+    if(TARGET fltk::fltk)
+        target_link_libraries(isobar-gui PRIVATE fltk::fltk fltk::images)
+    else()
+        target_link_libraries(isobar-gui PRIVATE fltk fltk_images)
+    endif()
 elseif(ISOBAR_FLTK_MODE STREQUAL "pkg-config")
     target_link_libraries(isobar-gui PRIVATE PkgConfig::FLTK)
 endif()
