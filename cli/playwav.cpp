@@ -12,6 +12,7 @@
  */
 #include "../core/wavfile.h"
 #include "../core/resample.h"
+#include "../gui/rtaudio_compat.h"
 
 #include <RtAudio.h>
 
@@ -49,7 +50,7 @@ int main(int argc, char **argv)
     RtAudio rt;
 
     if (argc > 1 && strcmp(argv[1], "--list") == 0) {
-        for (unsigned int id : rt.getDeviceIds()) {
+        for (unsigned int id : isobar_device_ids(rt)) {
             RtAudio::DeviceInfo inf = rt.getDeviceInfo(id);
             if (inf.outputChannels == 0)
                 continue;
@@ -99,10 +100,28 @@ int main(int argc, char **argv)
         prm.nChannels = 1;
         prm.firstChannel = 0;
         unsigned int frames = 2048;
-        if (rt.openStream(&prm, nullptr, RTAUDIO_SINT16, rate, &frames,
-                          &out_cb, nullptr, nullptr) != RTAUDIO_NO_ERROR ||
-            rt.startStream() != RTAUDIO_NO_ERROR) {
-            fprintf(stderr, "error: %s\n", rt.getErrorText().c_str());
+        std::string aerr;
+        /* playwav opens an OUTPUT stream (first arg), so the input-only shim
+         * doesn't fit; inline the v5/v6 split here. */
+#if defined(RTAUDIO_VERSION_MAJOR) && RTAUDIO_VERSION_MAJOR >= 6
+        RtAudioErrorType e1 = rt.openStream(&prm, nullptr, RTAUDIO_SINT16, rate,
+                                            &frames, &out_cb, nullptr, nullptr);
+        bool ok = (e1 == RTAUDIO_NO_ERROR) &&
+                  (rt.startStream() == RTAUDIO_NO_ERROR);
+        if (!ok) aerr = rt.getErrorText();
+#else
+        bool ok = true;
+        try {
+            rt.openStream(&prm, nullptr, RTAUDIO_SINT16, rate, &frames,
+                          &out_cb, nullptr);
+            rt.startStream();
+        } catch (const RtAudioError &e) {
+            ok = false;
+            aerr = e.what();
+        }
+#endif
+        if (!ok) {
+            fprintf(stderr, "error: %s\n", aerr.c_str());
             return 1;
         }
         while (rt.isStreamRunning())

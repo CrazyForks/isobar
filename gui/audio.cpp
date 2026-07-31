@@ -1,6 +1,7 @@
 /* audio.cpp - see audio.h. */
 
 #include "audio.h"
+#include "rtaudio_compat.h"
 #include "../core/resample.h"
 
 #include <RtAudio.h>
@@ -14,7 +15,7 @@ std::vector<AudioDeviceInfo> audio_input_devices()
      * (CoreAudio on macOS, ALSA/Pulse on Linux, WASAPI/DS on Windows) —
      * avoids hardcoding one platform's API enum. */
     RtAudio rt;
-    for (unsigned int id : rt.getDeviceIds()) {
+    for (unsigned int id : isobar_device_ids(rt)) {
         RtAudio::DeviceInfo inf = rt.getDeviceInfo(id);
         if (inf.inputChannels == 0)
             continue;
@@ -92,20 +93,18 @@ static Stream *open_stream(unsigned int device_id, std::string *err)
     unsigned int frames = 2048;   /* ~100 ms at 22050 Hz */
 
     /* first try 22050 Hz directly (Core Audio often converts); fall
-     * back to the device's preferred rate + our resampler */
-    RtAudioErrorType e = s->rt->openStream(nullptr, &prm, RTAUDIO_SINT16,
-                                           22050, &frames, &Stream::rt_cb,
-                                           s, nullptr);
-    if (e != RTAUDIO_NO_ERROR) {
+     * back to the device's preferred rate + our resampler. isobar_open_input_stream
+     * normalizes the v5 (throws) / v6 (returns error) openStream APIs. */
+    if (!isobar_open_input_stream(*s->rt, &prm, RTAUDIO_SINT16, 22050, &frames,
+                                  &Stream::rt_cb, s, err)) {
         unsigned int pref = 48000;
         RtAudio::DeviceInfo inf = s->rt->getDeviceInfo(device_id);
         if (inf.preferredSampleRate)
             pref = inf.preferredSampleRate;
-        e = s->rt->openStream(nullptr, &prm, RTAUDIO_SINT16, pref,
-                              &frames, &Stream::rt_cb, s, nullptr);
-        if (e != RTAUDIO_NO_ERROR) {
-            if (err)
-                *err = s->rt->getErrorText();
+        std::string err2;
+        if (!isobar_open_input_stream(*s->rt, &prm, RTAUDIO_SINT16, pref,
+                                      &frames, &Stream::rt_cb, s, &err2)) {
+            if (err) *err = err2;
             delete s->rt;
             delete s;
             return nullptr;
@@ -137,9 +136,7 @@ bool LiveAudio::start(unsigned int device_id,
         impl->current->rt->stopStream();
 
     if (!s->rt->isStreamRunning() &&
-        s->rt->startStream() != RTAUDIO_NO_ERROR) {
-        if (err)
-            *err = s->rt->getErrorText();
+        !isobar_start_stream(*s->rt, err)) {
         return false;
     }
     impl->current = s;
