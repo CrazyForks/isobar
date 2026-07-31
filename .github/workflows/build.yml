@@ -1,0 +1,81 @@
+# Cross-platform build + test for Isobar.
+#
+# Matrix: macOS / Linux / Windows. Each job installs the FLTK + RtAudio
+# dependencies, configures with CMake, builds, and runs the 7 headless ctest
+# tests (no audio hardware, no display needed — verified by the ctest set).
+# Raw build artifacts are uploaded per OS for manual inspection.
+#
+# See docs/README.md "Legal / provenance policy": this workflow only ever
+# builds from committed source; no decompiled artifacts are involved.
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake fltk rtaudio pkg-config
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libfltk1.3-dev libjpeg-dev libpng-dev zlib1g-dev \
+            librtaudio-dev
+
+      # vcpkg is preinstalled on the windows-latest image; this manifest drives it.
+      - name: Export vcpkg dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg --triplet x64-windows install fltk rtaudio
+
+      - name: Configure (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows, vcpkg toolchain)
+        if: runner.os == 'Windows'
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        run: >
+          cmake -B build -S .
+          -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.os }}
+          # The build outputs: the CLI decoder, the GUI, and the test binaries.
+          # On macOS the GUI is inside Isobar.app.
+          path: |
+            build/isobar-decode*
+            build/isobar-gui*
+            build/Isobar.app/**
+            build/*-test*
+            build/playwav*
+          if-no-files-found: ignore

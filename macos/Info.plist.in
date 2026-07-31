@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Identity -->
+    <key>CFBundleName</key>
+    <string>Isobar</string>
+    <key>CFBundleDisplayName</key>
+    <string>Isobar</string>
+    <key>CFBundleIdentifier</key>
+    <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+    <key>CFBundleVersion</key>
+    <string>${ISOBAR_VERSION}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${ISOBAR_VERSION}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- Executable + resources inside the .app bundle -->
+    <key>CFBundleExecutable</key>
+    <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>isobar</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <!-- Category: ham radio / scientific -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+
+    <!-- Min macOS version (FLTK 1.4 / C++17 need a modern SDK) -->
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+
+    <!-- Retina rendering for FLTK -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- MANDATORY: the app captures audio from the microphone. Without this
+         key macOS terminates the process on first audio access with no
+         user-visible explanation. This string is what the TCC permission
+         dialog shows the user. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Isobar needs microphone access to receive weather-fax (WEFAX)
+            audio from your radio for decoding.</string>
+</dict>
+</plist>

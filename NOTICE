@@ -1,0 +1,71 @@
+Isobar
+=======
+
+Isobar is a cross-platform WEFAX (emission F3C) weather-fax decoder that
+reimplements the behavior of, and is fully interoperable with, KG-FAX v1.1.3
+(K.G, 2009) — including its `.syn` file format, settings (`.ini`) schema,
+and UI workflow.
+
+Original work
+-------------
+All source code in this project is original, written from a functional
+specification derived from reverse engineering. No code, text, or graphical
+assets were copied from the original program. Where the implementation
+necessarily converges with the original (e.g., the Hilbert/atan2 FM
+demodulation approach, the WEFAX sync-tracking algorithm), that convergence
+reflects the small number of natural implementations of a public standard
+under the merger doctrine, not copying.
+
+Provenance
+----------
+WEFAX (Weather Facsimile) is an international transmission standard published
+by the World Meteorological Organization (WMO) and the International
+Telecommunication Union (ITU):
+  - FM subcarrier: 1500 Hz = black, 2300 Hz = white (ITU-R F.460).
+  - Drum speeds: 60 / 120 rpm; IOC 288 / 576.
+  - Start tone 300 Hz, stop tone 450 Hz.
+
+These standards are free for anyone to implement.
+
+KG-FAX is freeware, © K.G, 2009. It is NOT open source. The Isobar project
+is independent and NOT affiliated with, endorsed by, or derived from KG-FAX.
+
+Interoperability
+----------------
+Isobar reads and writes KG-FAX `.syn` files and the `kgfax.ini` settings
+file for interoperability only. The `.syn` format (including its radix-255
+line-count encoding) and the ini key names (including their original
+spellings) are reproduced exactly because file-format interoperability
+requires it.
+
+Trademarks
+----------
+"KG-FAX" is a name belonging to its author. Isobar does not use it. Any
+reference to KG-FAX in this documentation is for interoperability
+description and historical reference only, nominative and descriptive.
+
+License
+-------
+Copyright (C) 2026  Sara Sakuragawa
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Third-party notices
+-------------------
+Isobar links to these libraries:
+  - FLTK (Fast Light Toolkit) — LGPLv2 with a static-linking exception.
+    https://www.fltk.org/
+  - RtAudio — MIT-style license. https://www.music.mcgill.ca/~gary/rtaudio/
+
+This software is based in part on the work of the FLTK project.

@@ -1,0 +1,111 @@
+# Release packaging: on a pushed tag (v*.*.*), build per-OS via the build
+# workflow's job, run CPack to produce the native package (.dmg / .zip /
+# tarball), and attach them to a GitHub Release.
+#
+# This is separate from build.yml so pushes to main only run the build+test
+# gate; tags drive the actual release artifacts.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to treat as a release (for testing)'
+        required: false
+
+permissions:
+  contents: write   # needed to create the release + upload assets
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: Isobar-${{ github.ref_name }}-macOS.dmg
+          - os: ubuntu-latest
+            artifact: Isobar-${{ github.ref_name }}-linux.tar.bz2
+          - os: windows-latest
+            artifact: Isobar-${{ github.ref_name }}-windows.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake fltk rtaudio pkg-config
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libfltk1.3-dev libjpeg-dev libpng-dev zlib1g-dev \
+            librtaudio-dev
+
+      - name: Export vcpkg dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg --triplet x64-windows install fltk rtaudio
+
+      - name: Configure (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows, vcpkg toolchain)
+        if: runner.os == 'Windows'
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        run: >
+          cmake -B build -S .
+          -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (gate the release on the 7 headless tests)
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+
+      - name: Package (CPack)
+        working-directory: build
+        run: cpack -C Release
+
+      # CPack names the artifact Isobar-<version>-<platform>.<ext>; rename to
+      # the per-OS release name for a tidy GitHub Release assets list.
+      - name: Rename artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          mv build/Isobar-*.* out/${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.os }}
+          path: out/${{ matrix.artifact }}
+
+  publish:
+    name: publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

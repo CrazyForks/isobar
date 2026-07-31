@@ -1,0 +1,51 @@
+# Never publish these: derivative works of the copyrighted KG-FAX binary.
+# See docs/README.md "Legal / provenance policy".
+kgfax.exe
+kgfax.exe.c
+kgfax.exe.asm
+readme.txt
+extracted/
+.DS_Store
+
+# Personal working notes — not for publication (medical info, private
+# analysis references). See docs/README.md "What gets published vs. stays
+# private".
+SESSION-LOG.md
+AGENTS.md
+START-HERE.md
+
+# Icon design references (work-in-progress, not source)
+Gemini_Generated_Image_*.png
+
+# Local machine state (device index, window position), next to the exe
+# like the original
+kgfax.ini
+
+# CMake build directory (created by cmake -B build)
+build/
+build-*/
+
+# Decoded test output and scratch files (regenerable from the sample WAV)
+out.pgm
+out.png
+out.syn
+
+# Full 9.6-minute test recording (97 MB — too big for git). The 30-second
+# excerpt jmh-sample-short.wav is committed instead and is what CI runs
+# against. Keep the full file locally for deeper testing.
+jmh sample.wav
+
+# Stray source video (an internet recording used for early hand-tests;
+# unreferenced by any code or doc).
+videoplayback.mp4
+
+# Editor/agent scratch
+.zcode/
+.kimi-code/
+__pycache__/
+*.pyc
+
+# Chat/session export dumps (private working material)
+*-export-session*.md
+session-*.md
+
