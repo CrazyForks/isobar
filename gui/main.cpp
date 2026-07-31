@@ -449,15 +449,16 @@ static void cb_print(Fl_Widget *, void *ud)
     }
 
     Fl_Printer printer;
-    /* FLTK 1.4 renamed start_job/start_page → begin_job/begin_page. Homebrew
-     * ships 1.4; Debian apt + vcpkg ship 1.3. Branch on FL_API_VERSION so the
-     * same source builds on both. */
+    /* FLTK 1.4 renamed start_job/start_page → begin_job/begin_page (both
+     * zero-arg). FLTK 1.3 has start_job(int pagecount, …) (page count required)
+     * + start_page(void). Homebrew ships 1.4; Debian apt + vcpkg ship 1.3.
+     * Branch on FL_API_VERSION so the same source builds on both. */
 #if defined(FL_API_VERSION) && FL_API_VERSION >= 10400
     if (printer.begin_job() != 0)   /* native panel; cancel = no-op */
         return;
     if (printer.begin_page() == 0) {
 #else
-    if (printer.start_job() != 0)
+    if (printer.start_job(1) != 0)   /* 1 page; native panel; cancel = no-op */
         return;
     if (printer.start_page() == 0) {
 #endif
