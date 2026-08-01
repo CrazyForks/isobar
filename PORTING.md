@@ -10,5 +10,9 @@ full provenance statement.
 **Start here: [`docs/README.md`](docs/README.md)** — index of the functional
 specification and the implementation plans.
 
-Target platforms: macOS / Linux / Windows. Built with FLTK (GUI) and RtAudio
-(live audio). Licensed under GPLv3+ (see `LICENSE`).
+Target platforms: macOS / Linux / Windows, Intel and ARM alike. Built with
+FLTK (GUI) and RtAudio (live audio). Licensed under GPLv3+ (see `LICENSE`).
+Prebuilt self-contained packages — two macOS `.dmg`s (Apple Silicon, Intel),
+a Windows `.zip`, and x86_64 + aarch64 AppImages — are attached to each
+[Release](https://github.com/skgsara/isobar/releases); see the README's
+Download section for which file goes with which machine.

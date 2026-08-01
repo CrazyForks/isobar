@@ -175,7 +175,9 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   by independent routes. **This item is closed — do not reopen it.**
 - 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
   GitHub (Sessions 11–15)**. Repo is live at github.com/skgsara/isobar;
-  `build.yml` passes on macos-latest / ubuntu-latest / windows-latest:
+  `build.yml` passes on all five runners — macos-latest / macos-15-intel /
+  ubuntu-latest / ubuntu-22.04-arm / windows-latest (S22 widened the matrix
+  from three; Windows ARM is deliberately absent, see the v1.1.1 notes):
   0. ✅ **Pre-publish repo audit** (S13) — `.gitignore` hardened and
      dry-run-verified (no private/derivative files would be tracked); test
      fixture trimmed to a committed 30 s excerpt (`jmh-sample-short.wav`,
@@ -258,7 +260,8 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
     step gates on `otool -L | grep homebrew` failing the job on any leak.
   - **Linux** — AppImage via `linuxdeploy` REPLACES the tarball. linuxdeploy
     runs `ldd` and bundles every non-system `.so` into a single
-    `Isobar-<ver>-linux.AppImage` (chmod +x and run). Static ELF is
+    `Isobar-<ver>-linux.AppImage` (chmod +x and run; renamed per-architecture
+    in v1.1.1). Static ELF is
     impossible on Linux (glibc not static-linkable; apt `librtaudio-dev`
     ships no static lib), so this is the standard self-contained Linux
     deliverable. New `assets/isobar.desktop` drives linuxdeploy.
