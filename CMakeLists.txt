@@ -46,7 +46,6 @@ enable_testing()
 #   3. pkg-config           — systems with fltk.pc / fltk_images.pc.
 find_program(FLTK_CONFIG_EXECUTABLE NAMES fltk-config)
 set(ISOBAR_FLTK_MODE "")
-message(STATUS "isobar diag: FLTK_CONFIG_EXECUTABLE=[${FLTK_CONFIG_EXECUTABLE}]")
 
 # fltk-config is a Unix shell script emitting gcc-style flags (-lfltk, -L…),
 # which don't work under MSVC. vcpkg ships it under tools/fltk/ but on Windows
@@ -76,15 +75,31 @@ if(FLTK_CONFIG_EXECUTABLE AND NOT WIN32)
     string(REPLACE " " ";" FLTK_CXXFLAGS "${FLTK_CXXFLAGS}")
 else()
     find_package(FLTK CONFIG QUIET)
-    message(STATUS "isobar diag: find_package(FLTK CONFIG) -> FLTK_FOUND=[${FLTK_FOUND}] FLTK_LIBRARIES=[${FLTK_LIBRARIES}] FLTK_IMAGES_LIBRARIES=[${FLTK_IMAGES_LIBRARIES}]")
-    if(TARGET fltk::fltk)
-        message(STATUS "isobar diag: target fltk::fltk EXISTS")
-    endif()
-    if(TARGET fltk)
-        message(STATUS "isobar diag: target fltk EXISTS")
-    endif()
-    if(FLTK_FOUND)
+    # Record the FLTK target(s) to link. FLTK's target naming differs across
+    # versions/sources: upstream 1.4 = fltk::fltk + fltk::images; upstream 1.3
+    # config exports bare fltk/fltk_images; some vcpkg ports wrap in
+    # unofficial::. Pick the first pair that exists.
+    set(ISOBAR_FLTK_CORE "")
+    set(ISOBAR_FLTK_IMAGES "")
+    foreach(pair "fltk::fltk|fltk::images" "fltk|fltk_images" "unofficial::fltk::fltk|unofficial::fltk::images")
+        string(REPLACE "|" ";" p ${pair})
+        list(GET p 0 c)
+        list(GET p 1 i)
+        if(TARGET ${c})
+            set(ISOBAR_FLTK_CORE ${c})
+            if(TARGET ${i})
+                set(ISOBAR_FLTK_IMAGES ${i})
+            endif()
+            break()
+        endif()
+    endforeach()
+    if(ISOBAR_FLTK_CORE)
         set(ISOBAR_FLTK_MODE "config")
+    elseif(FLTK_FOUND AND FLTK_LIBRARIES)
+        # Legacy variable mode (1.3 module-style config). FLTK_IMAGES_LIBRARY
+        # is singular in the module API; accept either name.
+        set(ISOBAR_FLTK_MODE "config-vars")
+        set(ISOBAR_FLTK_IMAGES_VAR ${FLTK_IMAGES_LIBRARIES} ${FLTK_IMAGES_LIBRARY})
     else()
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
@@ -104,7 +119,6 @@ else()
             "or pass -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake")
     endif()
 endif()
-message(STATUS "isobar diag: ISOBAR_FLTK_MODE=[${ISOBAR_FLTK_MODE}]")
 
 # RtAudio: prefer a CMake config (vcpkg → RtAudio::rtaudio), then pkg-config
 # (Homebrew/apt ship rtaudio.pc), then a manual find as a last resort. The
@@ -200,23 +214,34 @@ if(ISOBAR_FLTK_MODE STREQUAL "fltk-config")
         target_link_libraries(isobar-gui PRIVATE ${FLTK_LDFLAGS_LIST})
     endif()
 elseif(ISOBAR_FLTK_MODE STREQUAL "config")
-    # FLTK's CMake config differs by version:
-    #   1.4 exports namespaced targets (fltk::fltk, fltk::images) — link those.
-    #   1.3 exports NO targets, only variables (FLTK_LIBRARIES, FLTK_INCLUDE_DIRS)
-    #       and a FLTK_USE_FILE — use the variables. (vcpkg currently ships 1.3.)
-    # fltk::images / FLTK_IMAGES_LIBRARIES pulls in Fl_PNG_Image + png/jpeg/z.
-    if(TARGET fltk::fltk)
-        target_link_libraries(isobar-gui PRIVATE fltk::fltk fltk::images)
-    elseif(TARGET fltk)
-        target_link_libraries(isobar-gui PRIVATE fltk fltk_images)
-    else()
-        target_include_directories(isobar-gui PRIVATE ${FLTK_INCLUDE_DIRS})
-        target_link_libraries(isobar-gui PRIVATE ${FLTK_LIBRARIES} ${FLTK_IMAGES_LIBRARIES})
+    # ISOBAR_FLTK_CORE/IMAGES were resolved during discovery (probing the
+    # fltk::fltk, bare-fltk, and unofficial::fltk shapes; vcpkg 1.3 exposes
+    # the bare 'fltk' target). fltk_images brings Fl_PNG_Image + png/jpeg/z.
+    target_link_libraries(isobar-gui PRIVATE ${ISOBAR_FLTK_CORE} ${ISOBAR_FLTK_IMAGES})
+elseif(ISOBAR_FLTK_MODE STREQUAL "config-vars")
+    # Legacy variable mode: a 1.3-style config that sets FLTK_LIBRARIES but no
+    # targets. Fail loudly if empty — never reach the linker without FLTK.
+    if(NOT FLTK_LIBRARIES)
+        message(FATAL_ERROR
+            "FLTK config found but exported no usable targets or libraries "
+            "(FLTK_DIR=[${FLTK_DIR}]). Install a current FLTK (1.4 exports "
+            "fltk::fltk) or ensure the config sets FLTK_LIBRARIES.")
     endif()
+    target_include_directories(isobar-gui PRIVATE ${FLTK_INCLUDE_DIRS} ${FLTK_INCLUDE_DIR})
+    target_link_libraries(isobar-gui PRIVATE ${FLTK_LIBRARIES} ${ISOBAR_FLTK_IMAGES_VAR})
 elseif(ISOBAR_FLTK_MODE STREQUAL "pkg-config")
     target_link_libraries(isobar-gui PRIVATE PkgConfig::FLTK)
 endif()
 isobar_link_rtaudio(isobar-gui)
+
+# Windows: FLTK's Win32 backends (Fl_Native_File_Chooser, Fl_Printer) need the
+# common-control / GDI / OLE / common-dialog system libs. A raw-variable FLTK
+# link doesn't pull these in via INTERFACE_LINK_LIBRARIES the way the imported
+# targets do, so add them explicitly for the MSVC build.
+if(WIN32)
+    target_link_libraries(isobar-gui PRIVATE
+        comctl32 ws2_32 gdi32 user32 shell32 ole32 oleaut32 uuid comdlg32)
+endif()
 
 # --- macOS .app bundle -------------------------------------------------------
 # On macOS, isobar-gui becomes Isobar.app with the icon, Info.plist (carrying
