@@ -20,7 +20,7 @@ and writes KG-FAX `.syn` files and the `kgfax.ini` settings file.
 ## Download
 
 Prebuilt, **self-contained** binaries for macOS, Windows, and Linux are
-attached to each [**Release**](https://github.com/sakuragawasara/isobar/releases)
+attached to each [**Release**](https://github.com/skgsara/isobar/releases)
 — no FLTK/RtAudio install needed on the target machine:
 
 - **macOS** — `Isobar-<version>-macOS.dmg` (an `Isobar.app` bundle with the

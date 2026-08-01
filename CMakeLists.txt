@@ -337,7 +337,7 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Cross-platform HF weather-fax (WEFAX) decoder — interoperable with KG-FAX")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/sakuragawasara/isobar")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/skgsara/isobar")
 if(APPLE)
     set(CPACK_DMG_FORMAT "UDBZ")
     set(CPACK_DMG_VOLUME_NAME "Isobar")

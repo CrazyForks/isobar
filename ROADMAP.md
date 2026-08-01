@@ -162,7 +162,7 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   those misframe GitHub publication), plain factual tone, no "please
   permit me" (creates a false authorization narrative).
 - 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
-  GitHub (Sessions 11–15)**. Repo is live at github.com/sakuragawasara/isobar;
+  GitHub (Sessions 11–15)**. Repo is live at github.com/skgsara/isobar;
   `build.yml` passes on macos-latest / ubuntu-latest / windows-latest:
   0. ✅ **Pre-publish repo audit** (S13) — `.gitignore` hardened and
      dry-run-verified (no private/derivative files would be tracked); test
@@ -222,7 +222,7 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   links nothing under MSVC → skip fltk-config on WIN32, probe target
   names, `FATAL_ERROR` on empty, add Win32 system libs (comctl32/
   comdlg32/ole32 for Fl_Printer/Fl_Native_File_Chooser).
-  **Repo pushed** (S15): github.com/sakuragawasara/isobar, full commit
+  **Repo pushed** (S15): github.com/skgsara/isobar, full commit
   history kept (9 commits incl. diag — user decision, shows real work).
   **Released v1.0.0** (S16): `release.yml` on the `v1.0.0` tag builds per-OS
   packages (macOS `.dmg`, Windows `.zip`, Linux tarball) via CPack and
