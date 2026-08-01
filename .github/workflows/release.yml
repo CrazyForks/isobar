@@ -76,13 +76,16 @@ jobs:
         working-directory: build
         run: cpack -C Release
 
-      # CPack names the artifact Isobar-<version>-<platform>.<ext>; rename to
-      # the per-OS release name for a tidy GitHub Release assets list.
+      # CPack names the artifact Isobar-<version>-<platform>.<ext> (e.g.
+      # Isobar-1.0.0-Darwin.dmg, -win64.zip, -Linux.tar.bz2). Rename to the
+      # per-OS release name for a tidy GitHub Release assets list.
       - name: Rename artifact
         shell: bash
         run: |
           mkdir -p out
-          mv build/Isobar-*.* out/${{ matrix.artifact }}
+          mv build/Isobar-*.* out/ 2>/dev/null || mv build/Isobar-* out/
+          echo "Renamed to: $(ls out/)"
+          mv out/Isobar-* out/${{ matrix.artifact }}
 
       - uses: actions/upload-artifact@v4
         with:
