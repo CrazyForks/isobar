@@ -198,6 +198,8 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      GitHub Release (auto-generated notes, `-` in tag = prerelease).
      AppImage deliberately deferred (needs linuxdeploy; tarball is the
      simple Linux story). **Not yet exercised end-to-end on a real tag.**
+     *(Self-containment landed in S17 — see below; Linux deliverable is now
+     an AppImage, not a tarball.)*
   **S14 must-fixes (made the code cross-platform):**
   `RtAudio::MACOSX_CORE` hardcoded → default ctor in `gui/audio.cpp`
   (×2) + `cli/playwav.cpp`; `M_PI` → local `PI` constant in
@@ -225,14 +227,38 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   **Released v1.0.0** (S16): `release.yml` on the `v1.0.0` tag builds per-OS
   packages (macOS `.dmg`, Windows `.zip`, Linux tarball) via CPack and
   attaches them to a GitHub Release. CI green on macOS/Linux/Windows.
-  Proven via a `v1.0.0-rc1` dry-run first (deleted after).
-  **Known limitation (tracked):** the prebuilt packages are dynamically
-  linked — the macOS `.app` references Homebrew's `/opt/homebrew/...` FLTK/
-  RtAudio dylibs (won't run without them; Intel-Mac paths differ), and the
-  Linux/Windows packages likewise expect system FLTK/RtAudio. Next release
-  should bundle dylibs (`macdylibbundler`) or static-link for self-contained
-  packages. Release notes say so; meanwhile build-from-source is the
-  reliable path.
+  Proven via a `v1.0.0-rc1` dry-run first (deleted after). **These packages
+  were dynamically linked** (needed FLTK/RtAudio pre-installed) — superseded
+  by v1.0.1 below.
+  **Released v1.0.1 — self-contained packages** (S17): the per-OS packages
+  now run WITHOUT FLTK/RtAudio installed on the target machine, each via the
+  mechanism native to that platform's package manager:
+  - **Windows** — vcpkg `x64-windows-static-md` triplet statically links
+    FLTK + RtAudio (and png/jpeg/zlib) into the `.exe`. No DLLs to ship.
+    Dynamic CRT (/MD) kept (matches CMake default; present on every Windows
+    machine). Proven by the 7-test ctest gate passing on a static-linked
+    binary on the windows-latest runner.
+  - **macOS** — `dylibbundler` embeds the 5 Homebrew FLTK/RtAudio dylibs
+    into `Isobar.app/Contents/Libraries/`, rewrites install names to
+    `@executable_path/../Libraries`, then re-codesigns ad-hoc. Verified
+    locally AND on the real CI-built binary: 644K raw → 2.8M bundled, zero
+    Homebrew paths remain (incl. transitive), app launches. A release.yml
+    step gates on `otool -L | grep homebrew` failing the job on any leak.
+  - **Linux** — AppImage via `linuxdeploy` REPLACES the tarball. linuxdeploy
+    runs `ldd` and bundles every non-system `.so` into a single
+    `Isobar-<ver>-linux.AppImage` (chmod +x and run). Static ELF is
+    impossible on Linux (glibc not static-linkable; apt `librtaudio-dev`
+    ships no static lib), so this is the standard self-contained Linux
+    deliverable. New `assets/isobar.desktop` drives linuxdeploy.
+  `build.yml` switched to the same static-md Windows triplet so the PR gate
+  tests the same linkage the release produces. No source changes; the ctest
+  gate is unchanged. Proven via a `v1.1.0-rc1` dry-run first (4/4 jobs
+  green, all 3 packages downloaded and verified self-contained), then
+  tagged `v1.0.1` on main. Squash-merged as PR #1.
+  **Known limitation (tracked):** the macOS `.app` is Apple-Silicon-only
+  (dylibs from `/opt/homebrew`; Intel-Mac `/usr/local` paths differ). A
+  universal build would close that gap. **Resolved in v1.0.1:** the dynamic-
+  linking limitation that affected all 3 platforms in v1.0.0.
   **Still pending:** contact K.G. before publicizing widely; notarize macOS
   .app if going broad (currently ad-hoc = right-click→Open).
   Decisions locked (S11): CMake; native per-OS release formats;
