@@ -1,6 +1,7 @@
 /* syncscan.cpp - see syncscan.h. */
 
 #include "syncscan.h"
+#include <cstddef>   /* size_t — older libstdc++ doesn't leak it via <vector> */
 
 namespace {
 

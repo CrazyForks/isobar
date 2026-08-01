@@ -3,6 +3,7 @@
 #include "decoder.h"
 #include "tonedetect.h"
 #include <cmath>
+#include <cstddef>   /* size_t — older libstdc++ doesn't leak it via <vector> */
 
 static const double PI = 3.14159265358979323846;
 
