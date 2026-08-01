@@ -18,6 +18,10 @@
 #include <string>
 #include <vector>
 
+/* Local PI — see core/tonedetect.cpp (M_PI is missing under MSVC unless
+ * _USE_MATH_DEFINES is defined before the math headers). */
+static const double PI = 3.14159265358979323846;
+
 static int fail(const char *what)
 {
     printf("FAIL: %s\n", what);
@@ -57,7 +61,7 @@ static bool write_tone(const std::string &path, uint32_t rate, double freq,
     put_u32(d, frames * 2);
     for (uint32_t i = 0; i < frames; i++) {
         double t = (double)i / rate;
-        int16_t s = (int16_t)(20000.0 * std::sin(2.0 * M_PI * freq * t));
+        int16_t s = (int16_t)(20000.0 * std::sin(2.0 * PI * freq * t));
         put_u16(d, (uint16_t)s);
     }
     FILE *f = fopen(path.c_str(), "wb");
