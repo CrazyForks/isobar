@@ -112,18 +112,52 @@ Runs once per 2205-sample (100 ms) block:
      `a={1, −1.95970703, 0.96050292}`), max over block → 300/450 Hz levels.
    - Level > 1e7 for `DetTime` consecutive blocks → **auto-start** (300 Hz,
      presses record SpeedButton) or **auto-stop + auto-save** (450 Hz,
-     `sub_40C858`).
+     `sub_40C858`). `DetTime` is compared straight against the consecutive-
+     block counter, so it is a **count of 100 ms blocks, not milliseconds**:
+     the default 20 means 2 s of steady tone.
 6. **Decimation** 2205 → 800 samples per block (factor 1/2205) → 8000 samples/s
    into `byte_4E89B8`. One 120-rpm line = 5 blocks = **4000 samples = 0.5 s**.
    `dword_4F25C4` (1 or 2, from rpm combo) makes 60-rpm lines 4000 samples @
    4000 samples/s (10 blocks × 400).
-7. **Sync pulse detection**: threshold a 4500-sample window at `Sync2Thre`; find
-   the black sync run; valid if period 3980–4020 samples and pulse width
-   100–400 samples (12.5–50 ms @ 8 kHz).
-8. **Fallback sync tracking**: when shape check fails, minimum-brightness search
-   in a window of `dword_4ED894` samples around the predicted position,
-   validated against `SyncThre`, with hysteresis counters
-   `LReSycn`/`RReSycn` before lock/unlock transitions.
+7. **Sync pulse detection** (traced 2026-08-01, `sub_402904` ≈ lines 6591–6660
+   of the decompile). Per completed line:
+   - Copy the 4000-sample line into `byte_4EB898`, plus its **first 500
+     samples again** into the adjacent `byte_4EC838` — a 4500-byte circular
+     view of one line.
+   - **Binarise**: `v <= Sync2Thre → 0`, else `0xFF`. Note this is the raw
+     video, with no smoothing.
+   - Scan from index 0: find the first `>= 0x80` sample, then count one
+     `>= 0x80` run into `v173`, one `< 0x80` run into `v174`, and — only if
+     the scan has **not yet wrapped** — a second `>= 0x80` run, also into
+     `v173`. Reaching index 4000 wraps to 0 once; wrapping twice marks the
+     line invalid.
+   - `valid = 3980 < v173+v174 < 4020 && 100 < v173 < 400`, i.e. the period
+     is one line and the `>= 0x80` total is a plausible sync pulse.
+   - **Polarity**: the 100..400-sample run is the one *above* the threshold,
+     so in the original's video the sync pulse is the HIGH-value run — its
+     video is inverted relative to ours, where 0 is black. Confirmed by
+     running this exact check over our video both ways: the literal reading
+     validates 0 of 60 lines at every threshold, the inverted sense 55 of 60.
+   - **Consequence**: the check structurally requires *exactly one* dark run
+     per line. Measured on our decoder's video, a clean test-chart signal
+     gives 55/60 such lines, but a real off-air chart gives **0 of 1851**
+     (median ~30 dark runs per line, from chart ink and noise). The original
+     therefore falls through to step 8 on essentially every line of a real
+     chart; the shape check is a fast path for clean signals, not the main
+     tracker.
+8. **Fallback sync tracking** (the path that does the real work). On the same
+   binarised buffer, slide a boxcar of `dword_4ED894` samples (the `syn` combo
+   window) over `[prevSync − SyncWidth, prevSync + dword_4ED894)` — note the
+   **asymmetry**, `SyncWidth` to the left and the combo window to the right —
+   and keep the position with the **minimum mean**. The candidate is valid when
+   that minimum mean is **below `SyncThre`**: an absolute bound on a boxcar
+   mean, *not* a dip depth relative to a local average.
+   Hysteresis, from the counters at `dword_4ED884`/`dword_4ED888`:
+   - **`RReSycn`** — consecutive *valid* lines before the decoder declares
+     itself locked (sets the ever-locked flag at `+1012`).
+   - **`LReSycn`** — consecutive *invalid* lines before the lock is dropped.
+
+   These two are easy to swap; `LReSycn` releases and `RReSycn` acquires.
 9. **Slant meter**: `drift = ((syncPos − prevSyncPos) + drift) * 0.5` EMA;
    |drift| ≤ 1 → green/yellow "locked" LED, else red (LEDs are recolored
    TProgressBars, via `sub_47F044`).
@@ -450,7 +484,16 @@ progress-bar LEDs.
 - **ComboBox4**: sync integration window
   `dword_4ED894 = 40·(i+1)/factor` samples = 5·(i+1) ms.
 - **Form4** edits: LReSycn@+1016, RReSycn@+1024, SyncThre@+1020 (= 20·i+10),
-  SyncWidth@+1040 (= 10·n ms), Sync2Thre@+1008, DetTime@+1044.
+  SyncWidth@+1040, Sync2Thre@+1008, DetTime@+1044.
+  **`SyncWidth` is in samples, not milliseconds.** This entry used to read
+  "= 10·n ms", which was a misreading of the up/down control's *step* — the
+  paired Edit shows the raw field while `UpDown5`'s position is `field/10`, so
+  the arrows move it in tens. Both uses in the decoder are sample offsets
+  inside a 4000-sample line (§3.2(7)(8)): the left edge of the fallback search
+  window, and the gate
+  `if (|newSync − prevSync| > SyncWidth && |newSync − prevSync| < 4000 − SyncWidth)
+  → invalid`, i.e. the furthest the sync position may move between lines.
+  The 100..400-sample **pulse width** window is hard-coded and has no ini key.
 - **Threads**: only the audio path; decoding is `Synchronize`d onto the GUI
   thread per 100 ms block.
 
@@ -459,20 +502,48 @@ progress-bar LEDs.
 Read `sub_40C224` (from ctor); write `sub_40BB84` (from
 `TForm1_FormDestroy`). VCL TIniFile on `<exe-dir>\kgfax.ini`.
 
-| Section | Key | Meaning / field offset |
-|---|---|---|
-| `[Dir]` | `DirName` | auto-save directory (+1072) |
-| `[Sync]` | `Sync2Thre` | +1008 |
-| `[Sync]` | `LReSycn` | +1016 (typo "Sycn" preserved in schema) |
-| `[Sync]` | `RReSycn` | +1024 |
-| `[Sync]` | `SyncThre` | +1020 |
-| `[Sync]` | `SyncWidth` | +1040 |
-| `[Det]` | `DetTime` | start/stop-tone integration time (+1044) |
-| `[Set]` | `rpm` | ComboBox5 index |
-| `[Set]` | `syn` | ComboBox4 index |
-| `[Set]` | `CycleGet` | bool, auto cyclic save (+1097) |
-| `[Wave]` | `WaveDev` | +1084, 0 = WAVE_MAPPER |
-| `[Form]` | `FormX`, `FormY` | window position |
+**Defaults.** The values below are the original's own, read from the literals
+pushed before each `TIniFile::ReadInteger` call in `sub_40C224` (e.g.
+`push 14h` before `"Sync2Thre"`). They were confirmed against a `kgfax.ini`
+generated by the original program with untouched settings — all twelve match.
+
+| Section | Key | Default | Meaning / field offset |
+|---|---|---|---|
+| `[Dir]` | `DirName` | *(empty)* | auto-save directory (+1072) |
+| `[Sync]` | `Sync2Thre` | 20 | binarisation threshold, §3.2(7) (+1008) |
+| `[Sync]` | `LReSycn` | 10 | invalid lines → drop lock (+1016; typo "Sycn" preserved) |
+| `[Sync]` | `RReSycn` | 5 | valid lines → declare lock (+1024) |
+| `[Sync]` | `SyncThre` | 30 | fallback validity bound, §3.2(8) (+1020) |
+| `[Sync]` | `SyncWidth` | 20 | **samples** of sync-position jump (+1040) |
+| `[Det]` | `DetTime` | 20 | tone integration, **count of 100 ms blocks** (+1044) |
+| `[Set]` | `rpm` | 0 | ComboBox5 index (0 = 120 rpm) |
+| `[Set]` | `syn` | 3 | ComboBox4 index (3 = 20 ms) |
+| `[Set]` | `CycleGet` | 1 | bool, auto cyclic save (+1097) |
+| `[Wave]` | `WaveDev` | 0 | +1084, 0 = WAVE_MAPPER |
+| `[Form]` | `FormX`, `FormY` | 0, 0 | window position |
+
+### What the port does with this
+
+The table above documents **KG-FAX**; it is the spec, and keeps the original's
+vocabulary. Isobar stores its own settings as **`isobar.ini`**, with the same
+structure and encodings but clearer names for the six tuning keys — the
+original's are opaque, two are typos, and two actively mislead (see
+`DEVIATIONS.md` #6 and #16):
+
+| `kgfax.ini` | `isobar.ini` |
+|---|---|
+| `Sync2Thre` | `DarkThreshold` |
+| `SyncThre` | `FallbackDepth` |
+| `LReSycn` | `ReleaseAfter` |
+| `RReSycn` | `LockAfter` |
+| `SyncWidth` | `MaxJump` |
+| `DetTime` | `ToneBlocks` |
+
+`DirName`, `rpm`, `syn`, `CycleGet`, `WaveDev` and `FormX`/`FormY` keep their
+names. Ten of the twelve defaults are adopted as-is; `Sync2Thre` and `SyncThre`
+are the exceptions (`DEVIATIONS.md` #16). `core/settings.cpp`
+`settings_read_kgfax()` still reads the original's names, for the one-time
+import.
 
 ## 7. `.syn` file format
 

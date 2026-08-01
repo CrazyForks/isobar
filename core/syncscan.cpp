@@ -5,17 +5,26 @@
 
 namespace {
 
-/* defaults (the values that reproduce the historical M0 behavior) */
+/* Defaults = the original program's own ini defaults (docs/01 sec. 6),
+ * EXCEPT dark_th and fb_thresh: those two feed formulas that differ from
+ * the original's, so its values do not transfer (DEVIATIONS.md #16).
+ * min_period/max_period/min_pulse/max_pulse are hard-coded in the
+ * original too, and have no ini key. */
 const int DEF_MIN_PERIOD  = 3980;
 const int DEF_MAX_PERIOD  = 4020;
 const int DEF_MIN_PULSE   = 100;
 const int DEF_MAX_PULSE   = 400;
-const int DEF_SEARCH_WIN  = 40;
-const int DEF_MAX_COAST   = 60;
-const int DEF_DARK_TH     = 96;
-const int DEF_LOCK_HYST   = 5;
+const int DEF_SEARCH_WIN  = 20;     /* SyncWidth  */
+const int DEF_MAX_COAST   = 10;     /* LReSycn    */
+const int DEF_LOCK_HYST   = 5;      /* RReSycn    */
 const int DEF_FALLBACK_WIN = 160;   /* syn combo default: 20 ms @ 8 kHz */
-const int DEF_FB_THRESH   = 10;     /* SyncThre combo index 0: 20*0+10  */
+/* Ours, not the original's (Sync2Thre 20 / SyncThre 30): we threshold an
+ * 8-sample moving average, the original binarises the raw video; and our
+ * fb_thresh is a dip depth below the local mean where the original's is
+ * an absolute bound on a boxcar mean. Its values in our formulas cost
+ * 1550 of 1851 lines on an off-air recording - measured, see docs/01. */
+const int DEF_DARK_TH     = 96;     /* cf. Sync2Thre */
+const int DEF_FB_THRESH   = 10;     /* cf. SyncThre  */
 
 const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 
@@ -81,10 +90,13 @@ size_t find_lock(const std::vector<long> &edges, size_t from,
     return edges.size();
 }
 
-/* Fallback sync tracking (docs/01 sec. 3.2(8)): search [lo, hi] for the
- * darkest position. Valid if it is dark (dark_th) and the dip below the
- * window mean is at least fb_thresh (SyncThre). The original's exact
- * validation is not in the spec; this is the documented approximation. */
+/* Fallback sync tracking: search [lo, hi] for the darkest position.
+ * Valid if it is dark (dark_th) and the dip below the window mean is at
+ * least fb_thresh. NOTE this is deliberately not the original's test -
+ * it slides a boxcar over the binarised video and accepts the minimum
+ * MEAN if that mean is below SyncThre (docs/01 sec. 3.2(8)). Ours is a
+ * dip depth relative to the local mean, which is why fb_thresh does not
+ * take SyncThre's value (DEVIATIONS.md #16). */
 long fallback_search(const std::vector<int> &sm, long lo, long hi,
                      const SyncParams &p)
 {

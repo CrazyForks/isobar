@@ -10,6 +10,30 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
    serializes DSP through `TThread::Synchronize` onto the GUI thread, which is
    the cause of the window-animation warning in the original readme. We keep
    the DSP math identical but move it off the UI thread.
+16. **Sync detection is our own algorithm, so `Sync2Thre` and `SyncThre`
+    keep our defaults (96 and 10, not the original's 20 and 30).**
+    Traced 2026-08-01 (docs/01 §3.2(7)(8)). The original binarises the
+    **raw** video at `Sync2Thre` and requires each line to contain
+    *exactly one* dark run: it scans one ON run, one OFF run and at most
+    one more ON run, then checks the period is ~4000 and the ON total is
+    100..400 samples. Its fallback slides a boxcar over the binarised
+    signal and accepts the minimum **mean** if that mean is below
+    `SyncThre` — an absolute bound, not a dip depth.
+    Ours instead thresholds an 8-sample moving average, collects *all*
+    candidate edges and chain-matches them across lines, and validates the
+    fallback on dip depth below the local mean.
+    **Why we did not switch**: measured against our decoder's video, the
+    original's single-dark-run requirement is satisfied by 55 of 60 lines
+    of a clean test-chart signal but **0 of 1851** lines of a real off-air
+    JMH recording (median ~30 dark runs per line, from chart ink and
+    noise). The original copes because it falls through to its fallback on
+    nearly every real line; our detector locks directly instead, and gives
+    1713/1851 lines locked with 0 coasted where feeding it the original's
+    two values gives 122 locked and 1550 coasted.
+    Both quantities therefore mean something different here, and the
+    original's numbers do not transfer. The other ten ini defaults are
+    adopted exactly. Porting the original's fallback tracker is a possible
+    future exercise; it is fully specified in docs/01 §3.2(8).
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is
@@ -39,11 +63,33 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
    table in `docs/05-gui-layout.md`); positions, sizes, and behavior still
    match the original. (User decision, 2026-07-29 — user does not read
    Japanese.)
-6. ~~Settings file lives at `~/kgfax.ini`~~ **Resolved 2026-07-30 (user
-   request):** the ini now lives next to the executable, exactly like the
-   original's `<exe-dir>\kgfax.ini` — no longer a deviation. Section/key
-   names and value encodings follow the original schema exactly
-   (including the `LReSycn`/`RReSycn` typos).
+6. **Settings are stored as `<exe-dir>/isobar.ini`, not `kgfax.ini`.**
+   (Location resolved 2026-07-30 per user request: next to the executable,
+   like the original. Filename changed 2026-08-01, user decision.)
+   Sections, value encodings and the `[Set]`/`[Wave]`/`[Form]`/`[Dir]` keys
+   still follow the original schema, but the file is no longer *shared*
+   with the original program, because two keys have diverged in meaning
+   (#16). Both programs parse either file without complaint, so a shared
+   file would let each silently mis-tune the other.
+   **The six tuning keys are also renamed** (user decision, 2026-08-01,
+   while `isobar.ini` was still unreleased and renaming was free):
+   `Sync2Thre`→`DarkThreshold`, `SyncThre`→`FallbackDepth`,
+   `LReSycn`→`ReleaseAfter`, `RReSycn`→`LockAfter`,
+   `SyncWidth`→`MaxJump`, `DetTime`→`ToneBlocks`. The originals are
+   opaque, two are misspellings of "Sync", and two actively mislead —
+   `SyncWidth` is not a width, and nothing in `LReSycn`/`RReSycn` says
+   which one locks. Every one of those traps was walked into during the
+   2026-08-01 audit. `docs/01` §6 keeps the original vocabulary and
+   carries the mapping table; `settings_read_kgfax()` still parses it.
+   On first run, if there is no `isobar.ini` but a `kgfax.ini` is present,
+   `DirName`, `rpm`, `syn`, `CycleGet`, `WaveDev` and `FormX`/`FormY` are
+   imported; `kgfax.ini` is never written. The whole `[Sync]`/`[Det]`
+   tuning block is deliberately left at our defaults — besides #16, a
+   `kgfax.ini` sitting next to the executable may have been written by an
+   *older build of this program*, when `LReSycn`/`RReSycn` were swapped and
+   `SyncWidth`/`DetTime` were on different scales (fixed 2026-08-01). Such
+   a file is indistinguishable from the original's, and importing its
+   tuning would silently produce nonsense.
 9. ~~Live preview returns to the upright view when reception stops~~
    **Resolved 2026-07-30:** traced from the binary — the original NEVER
    redraws on stop; it keeps the sideways column view (and the `.syn`

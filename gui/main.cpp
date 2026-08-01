@@ -12,8 +12,8 @@
  *                 the same button; DEV AID, kept for offline testing)
  *   Save data  -> save .syn file
  *   Clear      -> clear the preview
- *   Details... -> Form4 settings dialog, persisted to kgfax.ini (next
- *                 to the executable, like the original)
+ *   Details... -> Form4 settings dialog, persisted to isobar.ini (next
+ *                 to the executable, like the original's kgfax.ini)
  *   [menu btn] -> Form9 input-device chooser (WaveDev setting)
  *   Scan       -> start/stop recording lines into the image
  *   Auto ctl   -> arm tone control: 300 Hz start tone presses Scan,
@@ -21,7 +21,7 @@
  *   Auto save  -> opens Form8 on press; on stop tone, save
  *                 DirName/YYYYMMDDHHMM.syn (exe dir if DirName empty)
  *   Quit       -> save settings (rpm/syn choices + window position) to
- *                 kgfax.ini, then quit (same on title-bar close)
+ *                 isobar.ini, then quit (same on title-bar close)
  * Audio capture (RtAudio) runs from program start, like the original
  * (docs/01 sec. 3.1): the scope, LEDs and tone detectors are always
  * live; Scan only gates whether lines go into the image.
@@ -765,28 +765,8 @@ static void cb_decode_done(void *p)
     delete msg;
 }
 
-/* settings -> SyncParams (docs/01 sec. 5-6):
- *   SyncWidth = 10*n ms -> pulse width limits (n=5 -> 50 ms =
- *     400 samples max pulse at 8000 S/s, min kept at 1/4)
- *   Sync2Thre -> dark threshold for the shape check
- *   SyncThre  -> fallback dip-depth validation
- *   LReSycn   -> lock/release hysteresis
- *   RReSycn   -> full release (re-acquire after this many lines
- *     without a shape edge)
- *   syn combo -> fallback search window, 40*(i+1) samples
- *     (halved on the 4000 S/s 60-rpm stream) */
-static SyncParams make_sync_params(const KgSettings &cfg)
-{
-    SyncParams sp = sync_default_params();
-    sp.max_pulse = cfg.syncwidth * 80;
-    sp.min_pulse = cfg.syncwidth * 20;
-    sp.max_coast = cfg.rresycn;
-    sp.dark_th = cfg.sync2thre;
-    sp.fb_thresh = cfg.synthre;
-    sp.lock_hyst = cfg.lresycn;
-    sp.fallback_win = 40 * (cfg.syn + 1) / (cfg.rpm == 1 ? 2 : 1);
-    return sp;
-}
+/* settings -> SyncParams now lives in core/settings.h as
+ * sync_params_from_settings(), so the tests exercise the same mapping. */
 
 static void decode_worker(std::string path, KgSettings cfg, bool track)
 {
@@ -794,7 +774,7 @@ static void decode_worker(std::string path, KgSettings cfg, bool track)
     msg->app = g_app;
     msg->img = 0;
     try {
-        SyncParams sp = make_sync_params(cfg);
+        SyncParams sp = sync_params_from_settings(cfg);
 
         std::vector<double> audio = wav_read_22050(path, 0);
         std::vector<uint8_t> video = fm_decode(audio, decode_progress,
@@ -823,8 +803,10 @@ static void start_decode(AppState *app, const char *path)
     g_tone_state = 0;
     g_streak3 = 0;
     g_streak4 = 0;
-    /* DetTime (ms) -> 100 ms blocks, at least 1 (docs/01 sec. 3.2(5)) */
-    g_det_blocks = app->settings.dettime / 100;
+    /* DetTime is already a COUNT of 100 ms blocks, not milliseconds:
+     * the original compares it straight against its consecutive-block
+     * counter (docs/01 sec. 3.2(5)). Default 20 = 2 s of tone. */
+    g_det_blocks = app->settings.tone_blocks;
     if (g_det_blocks < 1)
         g_det_blocks = 1;
     set_title(app, "decoding...");
@@ -1030,7 +1012,7 @@ static bool start_audio(AppState *app)
         dev_id = devs[app->settings.wavedev - 1].id;
     }   /* else: saved device vanished -> fall back to the first */
 
-    LiveState *ls = new LiveState(make_sync_params(app->settings));
+    LiveState *ls = new LiveState(sync_params_from_settings(app->settings));
     ls->scan.set_track(app->sync_btn->value() != 0);
     ls->rpm = app->settings.rpm;
     ls->have_carry = false;
@@ -1045,7 +1027,7 @@ static bool start_audio(AppState *app)
     g_tone_state = 0;
     g_streak3 = 0;
     g_streak4 = 0;
-    g_det_blocks = app->settings.dettime / 100;
+    g_det_blocks = app->settings.tone_blocks;
     if (g_det_blocks < 1)
         g_det_blocks = 1;
 
@@ -1486,9 +1468,9 @@ int main(int argc, char **argv)
     app.vertical_btn = 0;   /* set in build_ui */
     g_app = &app;
 
-    /* settings: defaults, then kgfax.ini (next to the exe) if present */
-    settings_defaults(app.settings);
-    settings_read(settings_path(), app.settings);
+    /* settings: defaults, then isobar.ini (next to the exe), or a one-time
+     * import of the original's kgfax.ini if that is all there is */
+    settings_load(app.settings);
 
     if (argc > 1 && strcmp(argv[1], "--dump-settings") == 0) {
         settings_write_stream(std::cout, app.settings);

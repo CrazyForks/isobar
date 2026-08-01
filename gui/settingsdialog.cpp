@@ -3,12 +3,14 @@
  * Control -> setting mapping (docs/01-program-analysis.md sec. 5 lists
  * the edited fields; the docs do not name each label, so rows are
  * matched by the Form4 y-positions in docs/05):
- *   y=16  ComboBox1   -> SyncThre   (value = 20*index+10)
- *   y=40  Panel1/UpDown1   -> LReSycn
- *   y=59  Panel4/UpDown4   -> RReSycn
- *   y=78  Panel5/UpDown5   -> SyncWidth (n, width = 10*n ms)
- *   y=97  Panel2/UpDown2   -> Sync2Thre
- *   y=116 Panel3/UpDown3   -> DetTime
+ * Left column is the original's control, right is our setting name
+ * (isobar.ini; the original's key in parentheses - see core/settings.h):
+ *   y=16  ComboBox1        -> FallbackDepth (SyncThre, = 20*index+10)
+ *   y=40  Panel1/UpDown1   -> ReleaseAfter  (LReSycn: invalid -> release)
+ *   y=59  Panel4/UpDown4   -> LockAfter     (RReSycn: valid   -> lock)
+ *   y=78  Panel5/UpDown5   -> MaxJump       (SyncWidth, in samples)
+ *   y=97  Panel2/UpDown2   -> DarkThreshold (Sync2Thre)
+ *   y=116 Panel3/UpDown3   -> ToneBlocks    (DetTime, 100 ms blocks)
  * The original's Panel+UpDown pairs become Fl_Spinners.
  *
  * COORDINATE GOTCHA (same as the main window): plain Fl_Group does not
@@ -35,24 +37,24 @@ namespace {
 struct Dlg {
     bool        ok;
     KgSettings *work;     /* edited copy, committed only on OK */
-    Fl_Choice  *th;       /* SyncThre combo */
-    Fl_Spinner *lr;       /* LReSycn   */
-    Fl_Spinner *rr;       /* RReSycn   */
-    Fl_Spinner *sw;       /* SyncWidth */
-    Fl_Spinner *s2;       /* Sync2Thre */
-    Fl_Spinner *dt;       /* DetTime   */
+    Fl_Choice  *th;       /* FallbackDepth combo */
+    Fl_Spinner *lr;       /* ReleaseAfter  */
+    Fl_Spinner *rr;       /* LockAfter     */
+    Fl_Spinner *sw;       /* MaxJump       */
+    Fl_Spinner *s2;       /* DarkThreshold */
+    Fl_Spinner *dt;       /* ToneBlocks    */
 };
 
 void cb_ok(Fl_Widget *w, void *ud)
 {
     Dlg *d = (Dlg *)ud;
     KgSettings &s = *d->work;
-    s.synthre   = 20 * d->th->value() + 10;   /* docs/01 sec. 5 */
-    s.lresycn   = (int)d->lr->value();
-    s.rresycn   = (int)d->rr->value();
-    s.syncwidth = (int)d->sw->value();
-    s.sync2thre = (int)d->s2->value();
-    s.dettime   = (int)d->dt->value();
+    s.fallback_depth = 20 * d->th->value() + 10;   /* docs/01 sec. 5 */
+    s.release_after  = (int)d->lr->value();
+    s.lock_after     = (int)d->rr->value();
+    s.max_jump       = (int)d->sw->value();
+    s.dark_threshold = (int)d->s2->value();
+    s.tone_blocks    = (int)d->dt->value();
     d->ok = true;
     w->window()->hide();
 }
@@ -110,20 +112,26 @@ bool settings_dialog_run(KgSettings &s)
     d.th->add("Strict");
     d.th->add("Normal");
     d.th->add("Gentle");
-    int ti = (work.synthre - 10) / 20;      /* value -> combo index */
+    int ti = (work.fallback_depth - 10) / 20;      /* value -> combo index */
     if (ti < 0) ti = 0;
     if (ti > 2) ti = 2;                     /* only 3 presets */
     d.th->value(ti);
-    add_label(GX + 8, GY + 45, 90, "Lock/release");
-    d.lr = add_spinner(GX + 120, GY + 40, 1, 100, work.lresycn);
-    add_label(GX + 8, GY + 64, 84, "Full release");
-    d.rr = add_spinner(GX + 120, GY + 59, 1, 200, work.rresycn);
-    add_label(GX + 8, GY + 83, 72, "Corr range");
-    d.sw = add_spinner(GX + 120, GY + 78, 1, 10, work.syncwidth);
-    add_label(GX + 8, GY + 102, 72, "Sync thresh");
-    d.s2 = add_spinner(GX + 120, GY + 97, 0, 255, work.sync2thre);
-    add_label(GX + 8, GY + 121, 96, "Ctl det time");
-    d.dt = add_spinner(GX + 120, GY + 116, 0, 5000, work.dettime);
+    /* LReSycn releases the lock, RReSycn acquires it - not the other way
+     * round; the labels used to be swapped (docs/01 sec. 3.2(8)). */
+    add_label(GX + 8, GY + 45, 90, "Release after");
+    d.lr = add_spinner(GX + 120, GY + 40, 1, 100, work.release_after);
+    add_label(GX + 8, GY + 64, 84, "Lock after");
+    d.rr = add_spinner(GX + 120, GY + 59, 1, 200, work.lock_after);
+    /* SyncWidth is a sample offset inside a 4000-sample line, and its
+     * default is 20 - the old 1..10 range silently clamped it. Step 10
+     * mirrors the original's up/down control. */
+    add_label(GX + 8, GY + 83, 72, "Max jump");
+    d.sw = add_spinner(GX + 120, GY + 78, 1, 1999, work.max_jump);
+    d.sw->step(10);
+    add_label(GX + 8, GY + 102, 72, "Dark thresh");
+    d.s2 = add_spinner(GX + 120, GY + 97, 0, 255, work.dark_threshold);
+    add_label(GX + 8, GY + 121, 96, "Ctl det (x100ms)");
+    d.dt = add_spinner(GX + 120, GY + 116, 0, 5000, work.tone_blocks);
     g->end();
 
     /* GroupBox6 "Info" (208,8,105,145): neutral port info, NOT the

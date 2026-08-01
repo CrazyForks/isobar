@@ -305,6 +305,32 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.2.0 — settings audit + any sample rate (S23):** the user
+  supplied the `kgfax.ini` the original writes with untouched settings.
+  Comparing it against the port found eight of twelve defaults wrong and,
+  more importantly, **three misread settings**, all guesses recorded in
+  `docs/01` when the real values were unknown: `SyncWidth` is a
+  sync-position jump limit in samples, not a pulse width (the "= 10·n ms"
+  note was a misreading of the spinner's step); `DetTime` is a count of
+  100 ms blocks, not milliseconds, so Auto ctl waited 100 ms where the
+  original waits 2 s; and `LReSycn`/`RReSycn` were swapped (release vs
+  lock). The real defaults were confirmed against the `ReadInteger`
+  literals in the binary's ini loader.
+  Two of them, `Sync2Thre`/`SyncThre`, were deliberately **not** adopted:
+  the original's sync detector requires exactly one dark run per line,
+  which a clean test-chart signal satisfies (55/60 lines) but a real
+  off-air chart never does (0 of 1851, ~30 runs/line from ink and noise) —
+  the original leans on its fallback tracker for real charts. Its two
+  values in our differently-shaped formulas cost 1550 of 1851 lines. The
+  full traced algorithm is now in `docs/01` §3.2(7)(8) as a spec for a
+  future port; the difference is `DEVIATIONS.md` #16.
+  New: the WAV reader accepts **any sample rate ≥ 6000 Hz** (SDR
+  recordings at 8k/12k/48k previously could not be opened at all), reusing
+  the existing `core/resample.h`. Settings moved to **`isobar.ini`** with
+  the six tuning keys renamed to say what they mean — same file meant two
+  keys silently differing between the programs, the worst kind of
+  incompatibility. An existing `kgfax.ini` is imported once, preferences
+  only. ctest 8 → 9 (`wavrate-test`).
   **Resolved in v1.0.1:** the dynamic-linking limitation that affected all
   3 platforms in v1.0.0.
   **Contacting K.G. — CLOSED 2026-08-01 (S20): attempted twice, undeliverable.**

@@ -2,6 +2,7 @@
 
 #include "wavfile.h"
 #include "filters.h"
+#include "resample.h"
 #include <fstream>
 #include <stdexcept>
 #include <cstring>
@@ -75,10 +76,14 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
         throw std::runtime_error("only 16-bit PCM WAV is supported");
     if (channels < 1 || block_align != channels * 2)
         throw std::runtime_error("bad channel count / block alignment");
-    if (rate != 22050 && rate != 44100)
-        throw std::runtime_error("unsupported sample rate " +
-                                 std::to_string(rate) +
-                                 " Hz (need 22050 or 44100)");
+    /* Any sample rate is accepted (SDR recorders emit 8k/11.025k/12k/48k
+     * as readily as 44.1k); it is resampled to the decoder's 22050 Hz
+     * below. The only hard floor is Nyquist above the 2300 Hz white
+     * subcarrier, with a little room for the band-pass skirt. */
+    if (rate < 6000)
+        throw std::runtime_error("sample rate " + std::to_string(rate) +
+                                 " Hz is too low (need at least 6000 Hz: "
+                                 "the fax signal reaches 2300 Hz)");
 
     /* de-interleave + downmix to mono */
     size_t frames = raw.size() / block_align;
@@ -93,10 +98,14 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
         mono[i] = (double)acc / channels;
     }
 
+    const char *how = "";
     if (rate == 44100) {
         /* 2:1 decimation: anti-alias lowpass, then drop every 2nd sample.
          * Signal of interest is <= 2300 Hz; a 63-tap FIR with 5 kHz
-         * cutoff gives plenty of stopband rejection above 11025 Hz. */
+         * cutoff gives plenty of stopband rejection above 11025 Hz.
+         * Kept as its own exact path (rather than folding into the
+         * general resampler below) because every decode this project has
+         * been validated against came through it. */
         Fir aa;
         aa.init(design_lowpass(63, 5000.0, 44100.0));
         std::vector<double> out;
@@ -107,14 +116,27 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
                 out.push_back(y);
         }
         mono.swap(out);
+        how = " (decimated 2:1 to 22050 Hz)";
+    } else if (rate != 22050) {
+        /* Any other rate: the same streaming resampler the live-audio
+         * path uses (windowed-sinc lowpass at the lower of the two
+         * Nyquists, then linear-interpolated pick-off). Works in both
+         * directions, so 12000 Hz up and 48000 Hz down are one path. */
+        Resampler rs;
+        rs.init((double)rate, 22050.0);
+        std::vector<double> out;
+        out.reserve((size_t)(frames * (22050.0 / rate)) + 64);
+        for (size_t i = 0; i < frames; i++)
+            rs.feed(mono[i], out);
+        mono.swap(out);
+        how = " (resampled to 22050 Hz)";
     }
 
     if (info_out) {
         char buf[160];
         snprintf(buf, sizeof buf,
                  "%u Hz, %u ch, 16-bit PCM, %.1f s%s",
-                 rate, channels, (double)frames / rate,
-                 rate == 44100 ? " (decimated 2:1 to 22050 Hz)" : "");
+                 rate, channels, (double)frames / rate, how);
         *info_out = buf;
     }
     return mono;

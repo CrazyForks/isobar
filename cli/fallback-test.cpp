@@ -17,6 +17,7 @@
  * "jmh-sample-short.wav" excerpt. Gap positions scale to the sample.
  * Exit 0 on pass, 1 on fail.
  */
+#include "../core/settings.h"
 #include "../core/wavfile.h"
 #include "../core/decoder.h"
 #include "../core/syncscan.h"
@@ -144,16 +145,14 @@ int main()
                 "for gap+recovery)\n", base.lines.size());
     }
 
-    /* 4. GUI-default params on the clean signal */
+    /* 4. GUI-default params on the clean signal. Built through the real
+     * settings->params mapping rather than a copy of it, so this test
+     * fails if that mapping drifts (it used to hard-code the values with
+     * LReSycn/RReSycn the wrong way round, and said so in its comments). */
     {
-        SyncParams sp = sync_default_params();
-        sp.max_pulse = 5 * 80;      /* SyncWidth=5 */
-        sp.min_pulse = 5 * 20;
-        sp.max_coast = 60;          /* RReSycn */
-        sp.dark_th = 100;           /* Sync2Thre */
-        sp.fb_thresh = 10;          /* SyncThre */
-        sp.lock_hyst = 5;           /* LReSycn */
-        sp.fallback_win = 40 * 4;   /* syn combo "20 msec" */
+        KgSettings cfg;
+        settings_defaults(cfg);
+        SyncParams sp = sync_params_from_settings(cfg);
         FaxImage img = scan_lines(video, nullptr, &sp);
         fprintf(stderr, "gui-parms: %zu lines (locked %d, corrected %d, "
                 "coasted %d, relocks %d)\n",

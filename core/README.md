@@ -15,8 +15,12 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   4000 S/s stream (spec 3.2(6)), so syncscan runs unchanged for both
   speeds; CLI `--60`, GUI rpm combo.
 - `wavfile.*` — RIFF/WAVE reader: 16-bit PCM, any channels (mono
-  downmix), 44100 Hz (2:1 decimated with a 63-tap anti-alias FIR) or
-  22050 Hz; other formats rejected with a clear error.
+  downmix), **any sample rate from 6000 Hz up**. 22050 Hz is used as-is,
+  44100 Hz is decimated 2:1 with a 63-tap anti-alias FIR, and every other
+  rate (SDR recorders commonly write 8000/12000/48000) goes through
+  `resample.*` in either direction. Below 6000 Hz there is no Nyquist room
+  for the 2300 Hz white subcarrier, so it is rejected with a clear error,
+  as are non-PCM and non-16-bit files.
 - `syncscan.*` — line extraction (120/60 rpm): lines are emitted on a
   fixed 4000-sample grid from stream start (preamble included, like the
   original), rotated by the tracked phase offset (sync edge → index 0);
@@ -30,9 +34,19 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   1500 px via `line[8*i/3]`.
 - `fft.*` — 4096-point radix-2 FFT + Hann window, magnitudes in dBFS;
   used by the GUI spectrum scope (spec section 3.3).
-- `settings.*` — kgfax.ini-compatible settings (spec section 6: same
-  section/key names incl. the `LReSycn`/`RReSycn` typos), stored next to
-  the executable like the original (`exe_dir()` + `/kgfax.ini`).
+- `settings.*` — settings in the original's structure (spec section 6),
+  stored next to the executable like the original, as `exe_dir()` +
+  `/isobar.ini`. The six tuning keys are renamed to say what they mean
+  (`DarkThreshold`, `FallbackDepth`, `ReleaseAfter`, `LockAfter`,
+  `MaxJump`, `ToneBlocks`); `settings_read_kgfax()` still parses the
+  original's names, and `docs/01` §6 has the mapping table.
+  Ten of the twelve defaults are the original's own; `DarkThreshold` and
+  `FallbackDepth` are ours because our sync detector computes those two
+  quantities differently (`DEVIATIONS.md` #16) — which is also why the
+  file is no longer shared with the original. `settings_load()` imports an
+  existing `kgfax.ini` once, taking only the unambiguous preferences.
+  `sync_params_from_settings()` is the single settings→decoder mapping,
+  used by both the GUI and the tests.
   `scan_lines` takes an optional
   `SyncParams` (defaults = the M0 hardcoded values); the GUI reaches
   it via SyncWidth → pulse widths and RReSycn → max coast.

@@ -25,19 +25,41 @@
 
 void settings_defaults(KgSettings &s)
 {
-    s.sync2thre  = 100;
-    s.lresycn    = 5;
-    s.rresycn    = 60;   /* = scan_lines MAX_COAST: no behavior change */
-    s.synthre    = 10;   /* = 20*0+10, combo index 0 */
-    s.syncwidth  = 5;    /* 10*5 ms = 50 ms = 400 samples max pulse  */
-    s.dettime    = 100;
+    /* These are the ORIGINAL program's defaults, taken from the
+     * TIniFile::ReadInteger fallback arguments in its ini loader
+     * (docs/01-program-analysis.md sec. 6). Do not "tidy" them.
+     *
+     * Two exceptions, dark_threshold and fallback_depth: the keys exist in both
+     * programs and parse identically, but our detector computes those
+     * two quantities differently (moving average vs binarised raw video;
+     * dip-depth vs an absolute bound on a boxcar mean), so the
+     * original's 20 and 30 do not carry over - they cost 1550 of 1851
+     * lines on an off-air recording. See DEVIATIONS.md #16. */
+    s.dark_threshold = 96;  /* ours, cf. Sync2Thre 20 */
+    s.fallback_depth = 10;  /* ours, cf. SyncThre 30; = 20*0+10, "Strict" */
+    s.release_after  = 10;  /* LReSycn:  invalid lines -> drop lock   */
+    s.lock_after     = 5;   /* RReSycn:  valid lines -> declare lock  */
+    s.max_jump       = 20;  /* SyncWidth: samples of position jump    */
+    s.tone_blocks    = 20;  /* DetTime:  100 ms blocks of tone = 2 s  */
     s.dirname    = "";
     s.rpm        = 0;    /* 120 rpm */
     s.syn        = 3;    /* 20 msec, as in the original screenshot   */
-    s.cycleget   = false;
+    s.cycleget   = true;
     s.wavedev    = 0;
-    s.formx      = 100;
-    s.formy      = 100;
+    s.formx      = 0;
+    s.formy      = 0;
+}
+
+SyncParams sync_params_from_settings(const KgSettings &s)
+{
+    SyncParams sp = sync_default_params();
+    sp.search_win   = s.max_jump;
+    sp.max_coast    = s.release_after;
+    sp.lock_hyst    = s.lock_after;
+    sp.dark_th      = s.dark_threshold;
+    sp.fb_thresh    = s.fallback_depth;
+    sp.fallback_win = 40 * (s.syn + 1) / (s.rpm == 1 ? 2 : 1);
+    return sp;
 }
 
 std::string exe_dir()
@@ -117,7 +139,56 @@ std::string resource_dir()
 
 std::string settings_path()
 {
+    return exe_dir() + "/isobar.ini";
+}
+
+std::string legacy_settings_path()
+{
     return exe_dir() + "/kgfax.ini";
+}
+
+SettingsSource settings_load(KgSettings &s)
+{
+    return settings_load_from(settings_path(), legacy_settings_path(), s);
+}
+
+SettingsSource settings_load_from(const std::string &own_path,
+                                  const std::string &legacy_path,
+                                  KgSettings &s)
+{
+    settings_defaults(s);
+    if (settings_read(own_path, s))
+        return SETTINGS_OWN;
+
+    /* One-time migration from a kgfax.ini. The WHOLE [Sync]/[Det] tuning
+     * block is held back and keeps the defaults set above; only the
+     * unambiguous preferences below are imported.
+     *
+     * Two reasons, and the second is the one that bites:
+     *  - Sync2Thre and SyncThre exist in both programs and parse fine,
+     *    but feed differently-shaped formulas here, so the original's
+     *    values mis-tune our detector (DEVIATIONS.md #16).
+     *  - A kgfax.ini next to the executable may well have been written by
+     *    an OLDER BUILD OF THIS PROGRAM, back when LReSycn/RReSycn were
+     *    swapped and SyncWidth/DetTime were on different scales. Such a
+     *    file is indistinguishable from the original's, and reading it
+     *    under the corrected mapping silently produces nonsense (e.g.
+     *    RReSycn=60 -> a 60-line chain needed before sync locks).
+     * Decoder tuning is rarely customised and is one dialog away; the
+     * folder, device and window position are the settings worth keeping. */
+    KgSettings legacy;
+    settings_defaults(legacy);
+    if (!settings_read_kgfax(legacy_path, legacy))
+        return SETTINGS_DEFAULTS;
+
+    s.dirname  = legacy.dirname;
+    s.rpm      = legacy.rpm;
+    s.syn      = legacy.syn;
+    s.cycleget = legacy.cycleget;
+    s.wavedev  = legacy.wavedev;
+    s.formx    = legacy.formx;
+    s.formy    = legacy.formy;
+    return SETTINGS_IMPORTED;
 }
 
 /* ---- writing ---- */
@@ -127,13 +198,13 @@ void settings_write_stream(std::ostream &os, const KgSettings &s)
     os << "[Dir]\n"
        << "DirName=" << s.dirname << "\n"
        << "[Sync]\n"
-       << "Sync2Thre=" << s.sync2thre << "\n"
-       << "LReSycn="  << s.lresycn  << "\n"   /* sic: original typo */
-       << "RReSycn="  << s.rresycn  << "\n"   /* sic: original typo */
-       << "SyncThre=" << s.synthre   << "\n"
-       << "SyncWidth=" << s.syncwidth << "\n"
+       << "DarkThreshold=" << s.dark_threshold << "\n"
+       << "ReleaseAfter="  << s.release_after  << "\n"
+       << "LockAfter="     << s.lock_after     << "\n"
+       << "FallbackDepth=" << s.fallback_depth << "\n"
+       << "MaxJump="       << s.max_jump       << "\n"
        << "[Det]\n"
-       << "DetTime="  << s.dettime  << "\n"
+       << "ToneBlocks=" << s.tone_blocks << "\n"
        << "[Set]\n"
        << "rpm="      << s.rpm      << "\n"
        << "syn="      << s.syn      << "\n"
@@ -173,7 +244,13 @@ static int to_int(const std::string &v, int fallback)
     return (end && *end == '\0') ? (int)n : fallback;
 }
 
-bool settings_read(const std::string &path, KgSettings &s)
+/* Walk an ini, handing each section/key/value to `assign`. Both schemas
+ * share the file syntax and the [Set]/[Wave]/[Form]/[Dir] keys; they
+ * differ only in the [Sync]/[Det] names, which is what `assign` decides. */
+static bool parse_ini(const std::string &path, KgSettings &s,
+                      void (*assign)(const std::string &section,
+                                     const std::string &key,
+                                     const std::string &val, KgSettings &s))
 {
     std::ifstream f(path.c_str());
     if (!f)
@@ -192,36 +269,85 @@ bool settings_read(const std::string &path, KgSettings &s)
         size_t eq = line.find('=');
         if (eq == std::string::npos)
             continue;
-        std::string key = trim(line.substr(0, eq));
-        std::string val = trim(line.substr(eq + 1));
-
-        if (section == "Dir" && key == "DirName")
-            s.dirname = val;
-        else if (section == "Sync" && key == "Sync2Thre")
-            s.sync2thre = to_int(val, s.sync2thre);
-        else if (section == "Sync" && key == "LReSycn")
-            s.lresycn = to_int(val, s.lresycn);
-        else if (section == "Sync" && key == "RReSycn")
-            s.rresycn = to_int(val, s.rresycn);
-        else if (section == "Sync" && key == "SyncThre")
-            s.synthre = to_int(val, s.synthre);
-        else if (section == "Sync" && key == "SyncWidth")
-            s.syncwidth = to_int(val, s.syncwidth);
-        else if (section == "Det" && key == "DetTime")
-            s.dettime = to_int(val, s.dettime);
-        else if (section == "Set" && key == "rpm")
-            s.rpm = to_int(val, s.rpm);
-        else if (section == "Set" && key == "syn")
-            s.syn = to_int(val, s.syn);
-        else if (section == "Set" && key == "CycleGet")
-            s.cycleget = to_int(val, s.cycleget) != 0;
-        else if (section == "Wave" && key == "WaveDev")
-            s.wavedev = to_int(val, s.wavedev);
-        else if (section == "Form" && key == "FormX")
-            s.formx = to_int(val, s.formx);
-        else if (section == "Form" && key == "FormY")
-            s.formy = to_int(val, s.formy);
+        assign(section, trim(line.substr(0, eq)),
+               trim(line.substr(eq + 1)), s);
         /* unknown keys/sections: ignored on purpose */
     }
     return true;
+}
+
+/* Keys shared by both schemas. */
+static bool assign_common(const std::string &section, const std::string &key,
+                          const std::string &val, KgSettings &s)
+{
+    if (section == "Dir" && key == "DirName")
+        s.dirname = val;
+    else if (section == "Set" && key == "rpm")
+        s.rpm = to_int(val, s.rpm);
+    else if (section == "Set" && key == "syn")
+        s.syn = to_int(val, s.syn);
+    else if (section == "Set" && key == "CycleGet")
+        s.cycleget = to_int(val, s.cycleget) != 0;
+    else if (section == "Wave" && key == "WaveDev")
+        s.wavedev = to_int(val, s.wavedev);
+    else if (section == "Form" && key == "FormX")
+        s.formx = to_int(val, s.formx);
+    else if (section == "Form" && key == "FormY")
+        s.formy = to_int(val, s.formy);
+    else
+        return false;
+    return true;
+}
+
+/* isobar.ini: our own names for the tuning block (see settings.h). */
+static void assign_isobar(const std::string &section, const std::string &key,
+                          const std::string &val, KgSettings &s)
+{
+    if (assign_common(section, key, val, s))
+        return;
+    if (section == "Sync" && key == "DarkThreshold")
+        s.dark_threshold = to_int(val, s.dark_threshold);
+    else if (section == "Sync" && key == "ReleaseAfter")
+        s.release_after = to_int(val, s.release_after);
+    else if (section == "Sync" && key == "LockAfter")
+        s.lock_after = to_int(val, s.lock_after);
+    else if (section == "Sync" && key == "FallbackDepth")
+        s.fallback_depth = to_int(val, s.fallback_depth);
+    else if (section == "Sync" && key == "MaxJump")
+        s.max_jump = to_int(val, s.max_jump);
+    else if (section == "Det" && key == "ToneBlocks")
+        s.tone_blocks = to_int(val, s.tone_blocks);
+}
+
+/* kgfax.ini: the ORIGINAL program's names, typos and all. Only used by
+ * settings_load()'s import, which discards the tuning block anyway - the
+ * fields are still filled so the parser stays a faithful reader of the
+ * documented schema (docs/01 sec. 6). */
+static void assign_kgfax(const std::string &section, const std::string &key,
+                         const std::string &val, KgSettings &s)
+{
+    if (assign_common(section, key, val, s))
+        return;
+    if (section == "Sync" && key == "Sync2Thre")
+        s.dark_threshold = to_int(val, s.dark_threshold);
+    else if (section == "Sync" && key == "LReSycn")     /* sic: original typo */
+        s.release_after = to_int(val, s.release_after);
+    else if (section == "Sync" && key == "RReSycn")     /* sic: original typo */
+        s.lock_after = to_int(val, s.lock_after);
+    else if (section == "Sync" && key == "SyncThre")
+        s.fallback_depth = to_int(val, s.fallback_depth);
+    else if (section == "Sync" && key == "SyncWidth")
+        s.max_jump = to_int(val, s.max_jump);
+    else if (section == "Det" && key == "DetTime")
+        s.tone_blocks = to_int(val, s.tone_blocks);
+}
+
+bool settings_read(const std::string &path, KgSettings &s)
+{
+    return parse_ini(path, s, assign_isobar);
+}
+
+bool settings_read_kgfax(const std::string &path, KgSettings &s)
+{
+    return parse_ini(path, s, assign_kgfax);
 }

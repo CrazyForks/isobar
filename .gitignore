@@ -18,8 +18,10 @@ START-HERE.md
 Gemini_Generated_Image_*.png
 
 # Local machine state (device index, window position), next to the exe
-# like the original
+# like the original. kgfax.ini is the original program's file, kept as a
+# reference and read once for migration; isobar.ini is ours.
 kgfax.ini
+isobar.ini
 
 # CMake build directory (created by cmake -B build)
 build/
@@ -34,6 +36,12 @@ out.syn
 # excerpt jmh-sample-short.wav is committed instead and is what CI runs
 # against. Keep the full file locally for deeper testing.
 jmh sample.wav
+
+# 15-minute 12 kHz off-air JMH recording (22 MB), supplied 2026-08-01.
+# The only real weak-signal / non-44.1k sample we have — it is what the
+# sync-detector findings in DEVIATIONS.md #16 were measured against.
+# Keep it locally; too big for git as-is.
+HDSDR_20260801_032125Z_13987kHz_AF.wav
 
 # Stray source video (an internet recording used for early hand-tests;
 # unreferenced by any code or doc).

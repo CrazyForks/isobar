@@ -38,28 +38,38 @@ struct FaxImage {
     int relocks;          /* times lock was re-acquired after losing it */
 };
 
-/* Tunable sync-scan thresholds. Defaults are exactly the values that
- * reproduce the historical M0 behavior bit for bit on clean signals.
+/* Tunable sync-scan thresholds. The defaults are the original program's
+ * own ini defaults, read out of the binary's ReadInteger calls
+ * (docs/01-program-analysis.md sec. 6) - except dark_th and fb_thresh,
+ * which stay at ours because our detector computes those two quantities
+ * differently from the original's (DEVIATIONS.md #16).
  * The GUI's "Details" dialog reaches these via the settings file
- * (docs/01-program-analysis.md sec. 5-6):
- *   Sync2Thre -> dark_th       SyncThre -> fb_thresh
- *   SyncWidth (10*n ms) -> min/max pulse
- *   LReSycn -> lock_hyst       RReSycn -> max_coast
- *   syn combo -> fallback_win = 40*(i+1) samples (= 5*(i+1) ms @ 8 kHz) */
+ * (docs/01 sec. 5-6):
+ *   Sync2Thre -> dark_th       SyncThre  -> fb_thresh
+ *   SyncWidth -> search_win    (samples of allowed sync-position jump)
+ *   LReSycn   -> max_coast     (invalid lines before lock is dropped)
+ *   RReSycn   -> lock_hyst     (valid lines before lock is declared)
+ *   syn combo -> fallback_win = 40*(i+1) samples (= 5*(i+1) ms @ 8 kHz)
+ * min_pulse/max_pulse are NOT settable: the 100..400-sample sync pulse
+ * window is hard-coded in the original (docs/01 sec. 3.2(7)). */
 struct SyncParams {
     int min_period;   /* 3980 samples: shortest accepted sync period */
     int max_period;   /* 4020 */
     int min_pulse;    /*  100 samples: shortest sync pulse (12.5 ms) */
     int max_pulse;    /*  400 samples: longest sync pulse (50 ms)    */
-    int search_win;   /*   40 samples: +- window for shape-edge match */
-    int max_coast;    /*   60 lines: give up lock after this many misses */
-    int dark_th;      /*   96: brightness below this = "dark"        */
+    int search_win;   /*   20 samples: +- window for shape-edge match;
+                        an edge further than this from the predicted
+                        position is rejected (SyncWidth)              */
+    int max_coast;    /*   10 lines: give up lock after this many
+                        consecutive invalid lines (LReSycn)           */
+    int dark_th;      /*   96: brightness below this = "dark"         */
     int lock_hyst;    /*    5: valid periods to lock; misses before
-                        "coasting" state (LReSycn hysteresis)         */
+                        "coasting" state (RReSycn hysteresis)         */
     int fallback_win; /*  160 samples: min-brightness search width
                         (syn combo default 20 ms); 0 disables fallback */
     int fb_thresh;    /*   10: min dip depth below window mean for a
-                        valid fallback edge (SyncThre)                */
+                        valid fallback edge (cf. SyncThre, which is an
+                        absolute bound in the original - DEVIATIONS #16) */
 };
 
 SyncParams sync_default_params();

@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(isobar
-    VERSION 1.1.1
+    VERSION 1.2.0
     LANGUAGES CXX)
 
 # Expose the version to the source as ISOBAR_VERSION (used in the Details
@@ -340,6 +340,7 @@ add_isobar_test(fallback-test)
 add_isobar_test(tone-test)
 add_isobar_test(live-test)
 add_isobar_test(manual-sync-test)
+add_isobar_test(wavrate-test)
 
 # resample-test needs filters.cpp directly in addition to core.
 add_executable(resample-test cli/resample-test.cpp)

@@ -1,8 +1,10 @@
 /* wavfile.h - minimal RIFF/WAVE reader.
  *
  * Accepts: 16-bit PCM, any channel count (downmixed to mono by averaging),
- * 44100 or 22050 Hz. 44100 Hz input is decimated 2:1 to 22050 Hz with a
- * windowed-sinc anti-alias filter. Anything else is rejected with an error.
+ * any sample rate from 6000 Hz up. 22050 Hz is used as-is; 44100 Hz is
+ * decimated 2:1 with a windowed-sinc anti-alias filter; every other rate
+ * goes through core/resample.h (up or down). The 6000 Hz floor is
+ * Nyquist for the 2300 Hz white subcarrier plus filter skirt.
  */
 #ifndef ISOBAR_WAVFILE_H
 #define ISOBAR_WAVFILE_H

@@ -10,9 +10,12 @@
 Isobar decodes the weather-fax images broadcast over shortwave by agencies
 like JMH (Japan), NMG (USA), and BMV/ARC (various) — using only your
 computer's sound card and an HF receiver. It is an independent,
-from-scratch reimplementation that is fully interoperable with the
+from-scratch reimplementation that is interoperable with the
 long-standing hobbyist software **KG-FAX v1.1.3** (K.G, 2009): it reads
-and writes KG-FAX `.syn` files and the `kgfax.ini` settings file.
+and writes KG-FAX `.syn` files, and uses the same settings schema (stored
+as `isobar.ini`, importing an existing `kgfax.ini` on first run).
+Recordings load at **any sample rate** — 12 kHz from an SDR, 48 kHz from a
+sound card, whatever your receiver software writes.
 
 > **Not affiliated with, endorsed by, or derived from KG-FAX.** Isobar's
 > source is original, written from a functional specification produced by
@@ -64,7 +67,7 @@ DSP core is dependency-free.
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 8 headless tests
+ctest --test-dir build        # runs the 9 headless tests
 ```
 
 Install the dependencies first:
@@ -110,7 +113,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.1.1 released** — working software. All core receive features are
+**v1.2.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
 Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —
