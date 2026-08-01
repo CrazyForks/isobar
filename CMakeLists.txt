@@ -188,13 +188,18 @@ if(ISOBAR_FLTK_MODE STREQUAL "fltk-config")
         target_link_libraries(isobar-gui PRIVATE ${FLTK_LDFLAGS_LIST})
     endif()
 elseif(ISOBAR_FLTK_MODE STREQUAL "config")
-    # FLTK 1.4 exports namespaced aliases (fltk::fltk, fltk::images); 1.3's
-    # CMake config exports the unnamespaced fltk/fltk_images. vcpkg ships 1.4.
-    # fltk::images pulls in Fl_PNG_Image + its png/jpeg/z deps automatically.
+    # FLTK's CMake config differs by version:
+    #   1.4 exports namespaced targets (fltk::fltk, fltk::images) — link those.
+    #   1.3 exports NO targets, only variables (FLTK_LIBRARIES, FLTK_INCLUDE_DIRS)
+    #       and a FLTK_USE_FILE — use the variables. (vcpkg currently ships 1.3.)
+    # fltk::images / FLTK_IMAGES_LIBRARIES pulls in Fl_PNG_Image + png/jpeg/z.
     if(TARGET fltk::fltk)
         target_link_libraries(isobar-gui PRIVATE fltk::fltk fltk::images)
-    else()
+    elseif(TARGET fltk)
         target_link_libraries(isobar-gui PRIVATE fltk fltk_images)
+    else()
+        target_include_directories(isobar-gui PRIVATE ${FLTK_INCLUDE_DIRS})
+        target_link_libraries(isobar-gui PRIVATE ${FLTK_LIBRARIES} ${FLTK_IMAGES_LIBRARIES})
     endif()
 elseif(ISOBAR_FLTK_MODE STREQUAL "pkg-config")
     target_link_libraries(isobar-gui PRIVATE PkgConfig::FLTK)
