@@ -45,6 +45,11 @@ videoplayback.mp4
 __pycache__/
 *.pyc
 
+# Office lock/temp files. Matters here because opening the copyrighted
+# readme.txt in Word drops a ~$readme.txt beside it, which the readme.txt
+# rule above does NOT cover.
+~$*
+
 # Chat/session export dumps (private working material)
 *-export-session*.md
 session-*.md

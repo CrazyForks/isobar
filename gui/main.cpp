@@ -465,14 +465,24 @@ static void cb_print(Fl_Widget *, void *ud)
         int pw, ph;
         printer.printable_rect(&pw, &ph);
         printer.origin(0, 0);
-        /* stretch to the whole page, no aspect preservation, like the
-         * original's StretchDIBits(0,0,PageWidth,PageHeight) (10336).
-         * The scale must be baked into the image with copy(): scaled
-         * Fl_RGB_Image::draw() is ignored by the macOS printer driver
-         * (user test 2026-07-31 printed 1:1 - only the top-left
-         * ~612x792 of the bitmap landed on the page) */
+        /* the original stretches the FULL fixed 1500x2280 buffer over the
+         * whole page - StretchDIBits(0,0,PageWidth,PageHeight,0,0,1500,2280)
+         * (10336) - so a line is always ph/2280 tall however many were
+         * received; the tail just comes out black. We skip the black tail
+         * (see render_print_rgb), so we must scale by that same 2280-line
+         * ruler and leave the rest of the page blank. Stretching h lines
+         * over the whole page instead makes a partial reception 2280/h too
+         * tall (user's 1157-line print came out ~2x stretched, 2026-08-01).
+         * Width still fills the page, i.e. no aspect preservation, exactly
+         * like the original. The scale must be baked into the image with
+         * copy(): scaled Fl_RGB_Image::draw() is ignored by the macOS
+         * printer driver (user test 2026-07-31 printed 1:1 - only the
+         * top-left ~612x792 of the bitmap landed on the page) */
+        int th = (int)((double)ph * h / FaxImage::MAX_LINES + 0.5);
+        if (th < 1)  th = 1;
+        if (th > ph) th = ph;    /* buffer past 2280 lines (.bmp autosave) */
         Fl_RGB_Image page(rgb.data(), w, h, 3);
-        Fl_Image *scaled = page.copy(pw, ph);
+        Fl_Image *scaled = page.copy(pw, th);
         scaled->draw(0, 0);
         delete scaled;
         printer.end_page();
@@ -1217,6 +1227,33 @@ static void cb_autosave(Fl_Widget *w, void *ud)
     }
 }
 
+/* Manual sync align (docs/01 sec. 3.2 "Sync-track enable" + sec. 4
+ * "Zoom/pan"; the original readme's 同期処理の停止と手動同期位置指定).
+ * When the signal is buried in noise, or carries something that merely
+ * looks like a sync pulse (photographs, mostly), automatic tracking
+ * makes the picture worse - so you release the Sync button to freeze
+ * the phase, then click on the preview where the sync signal really
+ * is and tracking resumes from there. Click just BELOW the sync strip:
+ * that is where the line starts.
+ *
+ * The preview's 500 rows are one line's 4000 samples with the line
+ * start at the BOTTOM (faxview.cpp live_column), so a release at row y
+ * sits 8*(500 - y) samples along the line from the current start -
+ * the original's own formula. Nudging by that amount puts the clicked
+ * position at the start of the line. */
+static void cb_live_click(int y, void *ud)
+{
+    AppState *app = (AppState *)ud;
+    if (!g_live || !app->recording)
+        return;
+    if (app->sync_btn->value() != 0)
+        return;        /* only while tracking is OFF, like the original */
+    g_live->scan.nudge_phase(8L * (500 - y));
+    app->sync_btn->value(1);   /* the original presses the button too;
+                                  nudge_phase already re-enabled
+                                  tracking, so don't call cb_sync */
+}
+
 /* Sync toggle (docs/01 sec. 3.2 "Sync-track enable"): with tracking
  * OFF the decoder freezes the sync phase and both sync LEDs go black;
  * turning it back ON re-acquires lock through the normal warmup. */
@@ -1303,6 +1340,7 @@ static void build_ui(AppState *app)
     Fl_Scroll *scroll = new Fl_Scroll(5, 8, 764, 504);
     scroll->box(FL_DOWN_BOX);
     app->view = new FaxView(0, 0, 760, 500);
+    app->view->set_live_click_cb(cb_live_click, app);
     scroll->end();
 
     /* Panel7 (776,8,102,108) holding the scope (was Image3) */

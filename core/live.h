@@ -40,6 +40,20 @@ struct LiveScan {
      * thread while feed() runs on the audio thread. Default ON. */
     void set_track(bool on);
 
+    /* Manual sync align (docs/01 sec. 3.2 "Sync-track enable" and sec. 4
+     * "Zoom/pan"; the original readme's 手動同期位置指定): with tracking
+     * OFF the user points at where the sync signal really is, and the
+     * sync reference moves `delta` samples along the line (wrapped into
+     * one line, may be negative) and tracking resumes FROM THERE - the
+     * next line's edge search centres on the position the user gave
+     * instead of re-acquiring a fresh lock, which is the whole point
+     * when the signal is too noisy or too picture-like to lock on its
+     * own. Turns tracking back on by itself, like the original's click
+     * (which presses the Sync button programmatically).
+     * Thread-safe: may be called from the UI thread while feed() runs
+     * on the audio thread; applied at the next line boundary. */
+    void nudge_phase(long delta);
+
     /* Feed n video bytes (8000 S/s). For each completed line calls
      *     line_cb(line1500, state, ud)
      * with state 0 locked / 1 corrected / 2 coasting / 3 tracking off
@@ -77,6 +91,8 @@ private:
 
     std::atomic<bool> track;    /* Sync button, written by UI thread  */
     bool track_applied;         /* last state acted on (audio thread) */
+    std::atomic<long> man_delta;   /* pending manual align, samples   */
+    std::atomic<bool> man_req;     /* manual align posted by UI thread */
 
     void pump(void (*line_cb)(const uint8_t *, int, void *), void *ud);
     long try_lock(long grid);   /* >=0 edge / -1 wait / -2 no chain  */

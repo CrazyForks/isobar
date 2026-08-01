@@ -66,6 +66,13 @@ public:
     void live_column(const uint8_t *line1500);
     void live_end(const FaxImage &img);
 
+    /* Manual sync align (docs/01 sec. 4 "Zoom/pan"): while the LIVE
+     * preview is running, a mouse-up calls `cb` with the y of the
+     * release inside the 500-px column view - 499 = the bottom = the
+     * line start (sync edge), 0 = the far end of the line. Idle clicks
+     * still zoom/pan. Null (the default) ignores clicks while live. */
+    void set_live_click_cb(void (*cb)(int y, void *ud), void *ud);
+
     void draw() override;
     int  handle(int ev) override;
 
@@ -100,6 +107,8 @@ private:
     int       live_lines_;    /* lines fed so far (HUD "Line# n") */
     int       live_acc_[500]; /* tap sums for the current 3 lines */
     std::vector<uint8_t> live_rgb_;   /* 500*3 bytes per column */
+    void    (*live_click_cb_)(int y, void *ud);
+    void     *live_click_ud_;
 };
 
 #endif

@@ -145,17 +145,23 @@ bool settings_dialog_run(KgSettings &s)
             icon->image(img->copy(33, 33));
         delete img;
     }
-    Fl_Box *t;
-    t = add_label(IX + 4, IY + 69, 98, "Isobar");
-    t->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-    t = add_label(IX + 28, IY + 83, 70, ISOBAR_VERSION);
-    t->labelsize(9);
-    t = add_label(IX + 12, IY + 100, 82, "\xc2\xa9 Sara Sakuragawa");
-    t->labelsize(9);
-    t = add_label(IX + 28, IY + 114, 54, "GPL v3+");
-    t->labelsize(9);
-    t = add_label(IX + 12, IY + 128, 82, ".syn compatible");
-    t->labelsize(9);
+    /* Name+version on one line, then author/licence, then the two
+     * libraries we link (their licences are in NOTICE), then the file
+     * -format note. All centred on the full inner width so a longer
+     * version string stays centred instead of drifting. */
+    struct InfoLine { int y, size; const char *text; };
+    static const InfoLine info[] = {
+        { 69, 10, "Isobar " ISOBAR_VERSION },
+        { 85,  9, "\xc2\xa9 Sara Sakuragawa" },
+        { 99,  9, "GPL v3+" },
+        { 113, 8, "uses FLTK + RtAudio" },
+        { 127, 9, ".syn compatible" },
+    };
+    for (const InfoLine &il : info) {
+        Fl_Box *t = add_label(IX + 4, IY + il.y, 98, il.text);
+        t->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+        t->labelsize(il.size);
+    }
     gi->end();
 
     /* OK / Cancel: added by the port (original Form4 has none; it

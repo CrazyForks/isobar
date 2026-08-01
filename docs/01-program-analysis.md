@@ -146,6 +146,31 @@ Two quirks: changing the sync-width combo re-enables tracking in software
 in phasing mode while tracking is OFF presses the button programmatically and
 seeds the reference offset from the click position (manual phase align).
 
+**Manual sync align** (the readme's 同期処理の停止と手動同期位置指定; ported
+2026-08-01, S21). Two halves. (a) Release the Sync button to stop tracking
+when the signal is buried in noise, so a hopeless lock stops degrading the
+picture — that half was already there. (b) With tracking OFF, click the live
+preview where the sync signal really is — needed when the video contains
+something that merely *looks* like a sync pulse, photographs especially. The
+click seeds the reference offset (`dword_4ED6C4`, the position the next
+line's narrow edge search centres on) with *current edge + 8·(500−clickY)*,
+sets the ever-locked flag, and presses the Sync button back down. The
+preview's 500 rows are one line's 4000 samples with the line start at the
+BOTTOM, so 8 samples per row and the click is measured up from the bottom;
+click just *below* the sync strip, which is where the line starts.
+Port: `LiveScan::nudge_phase(delta)` publishes the shift atomically and
+`pump()` applies it at the next line boundary — before, and instead of, the
+Sync-button transition, since re-acquiring a fresh lock would discard the
+hand-placed reference. The GUI (`cb_live_click`) supplies 8·(500−y) and the
+formula's screen geometry stays out of `core/`.
+One deliberate departure, in `LiveScan::nudge_phase`: the wrap is a true
+modulo, where the original's out-of-range branch computes `4000 − v` and so
+yields a *negative* offset for v ≥ 4000 (a bug, or an IDA artifact for
+`v − 4000`; either way not worth reproducing). Otherwise faithful: the
+original's guard is `byte_4ED898` (set while reception runs, cleared when it
+stops), matched by the port's `app->recording`, and it takes any mouse-up
+with no click-vs-drag and no button test, which the port matches too.
+
 ### 3.3 Spectrum / waterfall scope (gated by `byte_4ED899`)
 
 - 4096-point radix-2 DIT FFT (twiddles `dbl_51EAE8`/`dbl_526AE8` =
@@ -269,7 +294,9 @@ seeds the reference offset from the click position (manual phase align).
   `TForm1_Image1MouseUp`; verified 2026-07-30): only when IDLE — while
   recording/decoding a click instead adjusts the sync phase by
   8·(500−clickY) samples wrapped to [0,4000) and presses the sync
-  speedbutton (traced, NOT ported yet). MouseDown records the position
+  speedbutton — manual sync align, see §3.2 (**ported 2026-08-01**,
+  S21: `LiveScan::nudge_phase`, `FaxView::set_live_click_cb`,
+  `cb_live_click`; `cli/manual-sync-test.cpp`). MouseDown records the position
   (`dword_4ED87C/4ED880`). MouseUp: |dx|<10 and |dy|<10 (deltas = down −
   up) = CLICK, else PAN (left button only; right-button drag does
   nothing). Zoom level `dword_4F25C0` ∈ {0,1,2}; all levels keep the
@@ -347,7 +374,13 @@ seeds the reference offset from the click position (manual phase align).
   during the render (ported as `gui/progressdialog.*`, but near-instant
   here). Port note: our render covers the received lines only —
   printing the original's ~1000-line black tail is wasteful (small
-  deliberate difference).
+  deliberate difference). **The page scale still uses the original's
+  fixed 2280-line ruler**: N received lines are drawn into the top
+  `N/2280` of the page (width still fills it), so the printed geometry
+  is identical to the original's and the unreceived part is simply left
+  blank instead of black. Fixed 2026-08-01 (S21) — before that the N
+  lines were stretched over the *whole* page, printing a partial
+  reception `2280/N` too tall (a 1157-line print came out ~2× stretched).
 - **Files**:
   - Save `.syn`: `TForm1_Button5Click` — magic `"SynFax2"`, then mode byte,
     negative flag, 2-byte radix-255 line count (byte0 = n/255, byte1 = n%255

@@ -103,6 +103,11 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   click = pause/resume
 - ✅ Sync toggle (SpeedButton1 sync-track enable: OFF freezes phase,
   LEDs black, state 3; re-ON re-acquires; spec in docs/01 §3.2)
+- ✅ Manual sync align (S21): with the Sync button released, clicking the
+  live preview just below the sync signal seeds the phase from the click
+  (8·(500−y) samples) and resumes tracking there instead of re-acquiring
+  — the second half of the readme's 同期処理の停止と手動同期位置指定.
+  Spec + departures in docs/01 §3.2; `cli/manual-sync-test.cpp`
 - ✅ Input-device chooser (Form9 replica, WaveDev persisted; `@menu` icon
   button; Volume button deactivated — no macOS equivalent); chooser
   switches the live stream; startup falls back to the default input if
@@ -267,6 +272,17 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   sync-preset combo restored to the original's 3 named presets Strict/
   Normal/Gentle). No build/packaging changes; same self-contained
   per-OS packages.
+  **Released v1.1.0** (S21): first **minor** bump — one new feature plus one
+  bug fix. Feature: manual sync align (click the live preview to place the
+  sync position by hand; see the M4 list above). Fix: Print was stretching a
+  partial reception `2280/N` too tall, because the port renders only the
+  received lines but still scaled them over the whole page — it now scales
+  by the original's fixed 2280-line ruler, so the geometry matches KG-FAX
+  and the unreceived part is left blank instead of black. Both verified by
+  the user on real audio and a real printer. Also: Details/Info panel
+  reflowed (name+version on one line, FLTK/RtAudio credited) and the dead
+  RtAudio homepage URL replaced in `NOTICE`/`README.md`. No build/packaging
+  changes; same self-contained per-OS packages.
   **Known limitation (tracked):** the macOS `.app` is Apple-Silicon-only
   (dylibs from `/opt/homebrew`; Intel-Mac `/usr/local` paths differ). A
   universal build would close that gap. **Resolved in v1.0.1:** the dynamic-

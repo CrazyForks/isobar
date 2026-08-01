@@ -115,7 +115,9 @@ Port notes: the original applies on close and has no OK/Cancel; the
 port's modal dialog adds them below the groups, so its window is
 320x192. The Panel+UpDown pairs become spinners. The Info group text
 is neutral port info, NOT the original's version string/branding
-(legal policy). Control-to-setting mapping (by row, top to bottom):
+(legal policy); its 5 lines are name+version / author / licence /
+libraries / file format, all centred on the group's inner width, and
+they no longer sit at the original's label coordinates. Control-to-setting mapping (by row, top to bottom):
 ComboBox1 = SyncThre (value 20*index+10); its 3 items are the named
 presets 厳しい/通常/優しい (index 0/1/2 = Strict/Normal/Gentle ->
 SyncThre 10/30/50), then spinners LReSycn,
@@ -143,11 +145,11 @@ RReSycn, SyncWidth (n where width = 10*n ms), Sync2Thre, DetTime.
 | UpDown3 (GroupBox3) | TUpDown | 160 | 116 | 17 | 17 |  |  |
 | GroupBox6 | TGroupBox | 208 | 8 | 105 | 145 | ソフト情報 | Info |
 | Image1 (GroupBox6) | TImage | 36 | 23 | 33 | 33 |  | (portrait icon) |
-| Label10 (GroupBox6) | TLabel | 4 | 69 | 98 | 13 | KG-FAX v1.1.3 | Isobar |
-| Label11 (GroupBox6) | TLabel | 18 | 104 | 70 | 12 | Copyright K.G | version (ISOBAR_VERSION macro, = project version) |
-| Label13 (GroupBox6) | TLabel | 3 | 121 | 99 | 12 | 2009/7/8 | © Sara Sakuragawa |
-| Label2 (GroupBox6) | TLabel | 58 | 83 | 44 | 12 | Build000 | .syn compatible |
-| (added) | TLabel |  |  |  |  |  | GPL v3+ |
+| Label10 (GroupBox6) | TLabel | 4 | 69 | 98 | 13 | KG-FAX v1.1.3 | Isobar + version (ISOBAR_VERSION macro, = project version), one line |
+| Label11 (GroupBox6) | TLabel | 18 | 104 | 70 | 12 | Copyright K.G | © Sara Sakuragawa |
+| Label13 (GroupBox6) | TLabel | 3 | 121 | 99 | 12 | 2009/7/8 | GPL v3+ |
+| Label2 (GroupBox6) | TLabel | 58 | 83 | 44 | 12 | Build000 | uses FLTK + RtAudio (licences in `NOTICE`) |
+| (added) | TLabel |  |  |  |  |  | .syn compatible |
 
 ## Form5 (TForm5, TFORM5) -- client area 280x111
 

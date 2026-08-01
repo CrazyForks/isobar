@@ -81,6 +81,8 @@ Third-party notices
 Isobar links to these libraries:
   - FLTK (Fast Light Toolkit) — LGPLv2 with a static-linking exception.
     https://www.fltk.org/
-  - RtAudio — MIT-style license. https://www.music.mcgill.ca/~gary/rtaudio/
+  - RtAudio — MIT-style license.
+    https://caml.music.mcgill.ca/~gary/rtaudio/
+    Source: https://github.com/thestk/rtaudio
 
 This software is based in part on the work of the FLTK project.

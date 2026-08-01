@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(isobar
-    VERSION 1.0.2
+    VERSION 1.1.0
     LANGUAGES CXX)
 
 # Expose the version to the source as ISOBAR_VERSION (used in the Details
@@ -287,7 +287,7 @@ if(NOT APPLE)
 endif()
 
 # --- Tests & utilities -------------------------------------------------------
-# The 7 below run headless and need only the source tree (some read
+# The 8 below run headless and need only the source tree (some read
 # "jmh sample.wav" via a relative path, so they run from the source root).
 # playwav and audio-restart-test need real audio hardware → not in ctest.
 
@@ -310,6 +310,7 @@ add_isobar_test(rpm60-test)
 add_isobar_test(fallback-test)
 add_isobar_test(tone-test)
 add_isobar_test(live-test)
+add_isobar_test(manual-sync-test)
 
 # resample-test needs filters.cpp directly in addition to core.
 add_executable(resample-test cli/resample-test.cpp)

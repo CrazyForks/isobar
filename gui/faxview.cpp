@@ -27,7 +27,8 @@ FaxView::FaxView(int x, int y, int w, int h)
       zoom_(0), off5C_(0), off60_(0),
       v64_(253), v68_(166), v6C_(0), v70_(0),
       down_x_(0), down_y_(0),
-      live_(false), live_cols_(0)
+      live_(false), live_cols_(0),
+      live_click_cb_(0), live_click_ud_(0)
 {
     for (int i = 0; i < 256; i++)
         pal_[i][0] = pal_[i][1] = pal_[i][2] = (uint8_t)i;
@@ -127,11 +128,31 @@ void FaxView::pan(int dx, int dy)
     render();
 }
 
+void FaxView::set_live_click_cb(void (*cb)(int y, void *ud), void *ud)
+{
+    live_click_cb_ = cb;
+    live_click_ud_ = ud;
+}
+
 int FaxView::handle(int ev)
 {
+    /* While receiving, a mouse-up is the manual sync align, not
+     * zoom/pan (docs/01 sec. 4 "Zoom/pan"): the original takes it
+     * straight off MouseUp with no click-vs-drag and no button test,
+     * so neither is applied here either. */
+    if (live_) {
+        if (ev == FL_PUSH)
+            return 1;         /* accept, or FLTK sends us no RELEASE */
+        if (ev == FL_RELEASE) {
+            if (live_click_cb_)
+                live_click_cb_(Fl::event_y() - y(), live_click_ud_);
+            return 1;
+        }
+        return Fl_Widget::handle(ev);
+    }
     /* zoom/pan only when idle and an image is present, like the
      * original (docs/01 sec. 4 "Zoom/pan") */
-    if (live_ || src_.lines.empty())
+    if (src_.lines.empty())
         return Fl_Widget::handle(ev);
     if (ev == FL_PUSH) {
         down_x_ = Fl::event_x() - x();

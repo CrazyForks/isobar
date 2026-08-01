@@ -9,7 +9,7 @@ const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 }
 
 LiveScan::LiveScan(const SyncParams &params)
-    : p(params), track(true)
+    : p(params), track(true), man_delta(0), man_req(false)
 {
     reset();
 }
@@ -29,6 +29,7 @@ void LiveScan::reset()
     since_shape = 0;
     lock_from = 0;
     track_applied = true;
+    man_req.store(false);
     lines_locked = 0;
     lines_corrected = 0;
     lines_coasted = 0;
@@ -39,6 +40,17 @@ void LiveScan::set_track(bool on)
 {
     /* just publish; pump() (audio thread) applies the transition */
     track.store(on);
+}
+
+void LiveScan::nudge_phase(long delta)
+{
+    /* just publish; pump() (audio thread) applies it. Tracking comes
+     * back on with it - the original's click presses the Sync button.
+     * man_req last: it is what pump() tests, so delta is already there
+     * by the time the request is visible. */
+    man_delta.store(delta);
+    track.store(true);
+    man_req.store(true);
 }
 
 int LiveScan::lines_emitted() const
@@ -184,6 +196,26 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
         long grid = (long)lines_emitted() * LINE_SAMPLES;
         if (grid + LINE_SAMPLES > (long)buf.size())
             return;              /* window incomplete: wait */
+
+        /* Manual sync align (see nudge_phase). Applied before - and
+         * INSTEAD OF - the Sync button transition below: resuming from
+         * a hand-placed reference must not clear `locked`, or the next
+         * line would re-acquire through a full-window chain search and
+         * throw the user's position away. From here it is the ordinary
+         * narrow search around the seeded phase, which is what the
+         * original does too (its click sets the ever-locked flag
+         * alongside the reference offset). */
+        if (man_req.load()) {
+            man_req.store(false);
+            long d = man_delta.load() % LINE_SAMPLES;
+            phi = (phi + d + LINE_SAMPLES) % LINE_SAMPLES;
+            track_applied = true;
+            locked = true;
+            ever_locked = true;
+            miss = 0;
+            since_shape = 0;
+            last_shape = grid + phi;
+        }
 
         /* Sync button transition (docs/01 sec. 3.2 "Sync-track
          * enable"). Re-enable: reset the state machine and re-acquire

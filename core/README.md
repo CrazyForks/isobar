@@ -55,7 +55,11 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   restructured for incremental feeds (edge decisions lag by up to
   max_pulse; "no edge" is decidable only past expected+search_win+
   max_pulse). Byte-identical output to the batch scanner
-  (`ctest --test-dir build -R live-test`).
+  (`ctest --test-dir build -R live-test`). `nudge_phase()` is the manual
+  sync align (docs/01 §3.2): the UI thread posts a phase shift in
+  samples, `pump()` applies it at the next line boundary and keeps the
+  lock so the search stays centred on the position the user gave
+  (`ctest --test-dir build -R manual-sync-test`).
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
 
