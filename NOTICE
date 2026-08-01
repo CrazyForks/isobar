@@ -1,7 +1,7 @@
 Isobar
 =======
 
-Isobar is a cross-platform WEFAX (emission F3C) weather-fax decoder that
+Isobar is a cross-platform WEFAX (emission J3C) weather-fax decoder that
 reimplements the behavior of, and is fully interoperable with, KG-FAX v1.1.3
 (K.G, 2009) — including its `.syn` file format, settings (`.ini`) schema,
 and UI workflow.
@@ -19,11 +19,26 @@ under the merger doctrine, not copying.
 Provenance
 ----------
 WEFAX (Weather Facsimile) is an international transmission standard published
-by the World Meteorological Organization (WMO) and the International
-Telecommunication Union (ITU):
-  - FM subcarrier: 1500 Hz = black, 2300 Hz = white (ITU-R F.460).
-  - Drum speeds: 60 / 120 rpm; IOC 288 / 576.
-  - Start tone 300 Hz, stop tone 450 Hz.
+by the World Meteorological Organization: WMO-No. 386, "Manual on the Global
+Telecommunication System", Volume I, Part III, section 5 ("Technical
+characteristics of equipment for meteorological facsimile (analogue)
+transmissions"):
+  - FM sub-carrier over radio circuits: centre 1900 Hz, 1500 Hz = black,
+    2300 Hz = white (section 5.5.1; also section 5.3.1.2).
+  - Index of cooperation 576 or 288 (section 5.1.2).
+  - Scanning line frequency 60 / 90 / 120 / 240 rpm (section 5.1.5).
+  - IOC-selection tone 300 Hz for IOC 576, 675 Hz for IOC 288
+    (section 5.2.2.1); stop signal 450 Hz (section 5.2.5.1).
+  - Phasing signal, 30 s at 1.0 / 1.5 / 2.0 / 4.0 Hz for 60 / 90 / 120 /
+    240 rpm (section 5.2.3.1).
+
+Receiver conformance for this standard is specified by ISO 9876:2015, "Ships
+and marine technology — Marine facsimile receivers for meteorological charts",
+which covers receivers for charts transmitted per WMO-No. 386, Part III-5.
+
+HF weather-fax broadcasts carry this sub-carrier over single-sideband and are
+listed with emission designator J3C (see NOAA, "Worldwide Marine
+Radiofacsimile Broadcast Schedules").
 
 These standards are free for anyone to implement.
 

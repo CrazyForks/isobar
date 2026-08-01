@@ -1,6 +1,6 @@
 # Isobar — HF Weather-Fax (WEFAX) Decoder
 
-Isobar is a cross-platform WEFAX (emission F3C) weather-fax decoder that
+Isobar is a cross-platform WEFAX (emission J3C) weather-fax decoder that
 reimplements the behavior of, and is fully interoperable with, KG-FAX v1.1.3
 (K.G, 2009) — including its `.syn` file format, settings (`.ini`) schema, and
 UI workflow. It is an independent reimplementation for interoperability; it is

@@ -3,7 +3,7 @@
 [![Build](https://github.com/skgsara/isobar/actions/workflows/build.yml/badge.svg)](https://github.com/skgsara/isobar/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/skgsara/isobar?include_prereleases)](https://github.com/skgsara/isobar/releases)
 
-**A cross-platform HF weather-fax (WEFAX, emission F3C) decoder.**
+**A cross-platform HF weather-fax (WEFAX, emission J3C) decoder.**
 
 Isobar decodes the weather-fax images broadcast over shortwave by agencies
 like JMH (Japan), NMG (USA), and BMV/ARC (various) — using only your
@@ -36,9 +36,9 @@ To build from source instead, see [Build](#build).
 
 ## What it does
 
-- **Decodes WEFAX** (ITU-R F.460): 1500/2300 Hz FM subcarrier, 60 or 120 rpm,
-  IOC 576. Start (300 Hz) / stop (450 Hz) tone detection arms and disarms
-  capture automatically.
+- **Decodes WEFAX** (WMO-No. 386 Part III §5): 1500/2300 Hz FM sub-carrier
+  about 1900 Hz, 60 or 120 rpm, IOC 576. IOC-selection (300 Hz) / stop
+  (450 Hz) tone detection arms and disarms capture automatically.
 - **Live reception** from any sound input, or **offline decode** from a WAV
   recording. Spectrum scope + waterfall shown live during reception.
 - **Image tools**: zoom/pan, vertical rotate toggle, XY flip, 4 color

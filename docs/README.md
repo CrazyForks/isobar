@@ -1,6 +1,6 @@
 # Isobar — Documentation Index
 
-Isobar is a cross-platform HF weather-fax (WEFAX, emission F3C) decoder for
+Isobar is a cross-platform HF weather-fax (WEFAX, emission J3C) decoder for
 macOS / Linux / Windows. It is an independent reimplementation, written from a
 functional specification produced by reverse engineering, that reproduces the
 behavior of — and is fully interoperable with — KG-FAX v1.1.3 (K.G, 2009),
@@ -106,8 +106,12 @@ it lawful. They apply to every contributor and every PR.
 ### The principle
 
 Copyright protects **expression, not ideas**. The WEFAX protocol (1500/2300 Hz
-FM subcarrier, 60/120 rpm, IOC 288/576, 300/450 Hz start/stop tones) is an
-international standard (ITU-R F.460) — free for anyone to implement.
+FM sub-carrier about 1900 Hz, 60/120 rpm, IOC 288/576, 300 Hz IOC-selection and
+450 Hz stop tones) is an international standard — **WMO-No. 386, *Manual on the
+Global Telecommunication System*, Vol. I, Part III, §5**, with receiver
+conformance specified by **ISO 9876:2015** — free for anyone to implement.
+That a published conformance standard exists for *building receivers* to this
+spec is itself part of the argument: implementing it is the standard's purpose.
 Algorithms, mathematical techniques (Hilbert/atan2 demodulation, resonator
 tone detection, sync tracking), and functional constants are unprotectable
 ideas/facts; where only a few natural implementations exist, the merger
@@ -155,11 +159,20 @@ creative assets.
    and were reviewed as acceptable; just don't add new decompile line/VA refs.)
 3. Decide the project's own name and license (decided: **Isobar**, GPLv3+);
    `LICENSE` and `NOTICE` state original work, not affiliated with KG-FAX,
-   WEFAX per ITU/WMO standards, `.syn` support for interoperability only.
+   WEFAX per WMO-No. 386 Part III §5 (and ISO 9876:2015 for receiver
+   conformance), `.syn` support for interoperability only.
 4. As a courtesy in a small community — and to reduce the small but real risk
    of a DMCA notice — **contact the author (K.G) about the project before
    release.** Not a legal requirement, but strongly recommended, and it may
    resolve gray areas (e.g., blessing, or even coefficients).
+   **Done 2026-08-01 — undeliverable; no contact channel exists.** He was
+   written to at his own published address within hours of first release and
+   before any promotion; the mail was rejected by his mail server, and a
+   second attempt from an unrelated provider the same day was rejected
+   identically, so the mailbox is gone rather than the sender being blocked.
+   His QRZ listing and amateur-station licence no longer exist either. The
+   attempts are documented privately outside the repo. Nothing further is
+   owed on this point; if he ever resurfaces, respond in good faith then.
 5. When publishing, publish from a clean repo history (no commit should ever
    have touched the decompiled artifacts).
 

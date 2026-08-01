@@ -155,12 +155,19 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   Form6→Form9 corrected, "clean-room" overclaim softened to
   "reimplementation from a spec". AGENTS.md/START-HERE.md/SESSION-LOG.md
   gitignored (medical info — user decision).
-- ⬜ Contact original author (K.G) — **before publishing**, not after
-  (per both legal audits + user decision Session 10). The realistic risk
-  is a GitHub DMCA notice if he objects; a heads-up first prevents that.
-  Draft Japanese email uses 互換実装 framing (NOT 復刻, NOT 個人研究 —
-  those misframe GitHub publication), plain factual tone, no "please
-  permit me" (creates a false authorization narrative).
+- ✅ Contact original author (K.G) — **attempted 2026-08-01 (S20);
+  undeliverable, and no contact channel for him exists.** Sent within hours
+  of the first public release, before any promotion. The bilingual letter
+  used the agreed 互換実装 framing (NOT 復刻, NOT 個人研究 — those misframe
+  GitHub publication), plain factual tone, no "please permit me" (creates a
+  false authorization narrative). Rejected by his own mail server; an
+  identical rejection came back from a second, unrelated sending provider
+  the same day, so the failure is at the receiving end and the mailbox is
+  gone. QRZ.com and the 総務省 station-licence registry return nothing for
+  JJ0OBZ. Both bounces are documented privately outside the repo (medical/
+  personal folder, like AGENTS.md). The DMCA-risk rationale is satisfied as
+  far as it can be: he was written to at his own published address, twice,
+  by independent routes. **This item is closed — do not reopen it.**
 - 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
   GitHub (Sessions 11–15)**. Repo is live at github.com/skgsara/isobar;
   `build.yml` passes on macos-latest / ubuntu-latest / windows-latest:
@@ -264,8 +271,16 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   (dylibs from `/opt/homebrew`; Intel-Mac `/usr/local` paths differ). A
   universal build would close that gap. **Resolved in v1.0.1:** the dynamic-
   linking limitation that affected all 3 platforms in v1.0.0.
-  **Still pending:** contact K.G. before publicizing widely; notarize macOS
-  .app if going broad (currently ad-hoc = right-click→Open).
+  **Contacting K.G. — CLOSED 2026-08-01 (S20): attempted twice, undeliverable.**
+  Mail to his published address (from the original readme.txt) was rejected by
+  his own mail server, and an identical rejection came back from a second,
+  unrelated sending provider the same day — so the failure is at the receiving
+  end, not a sender block, and the mailbox is gone. His QRZ listing and
+  amateur-station licence no longer exist either. All known channels are
+  exhausted; both bounces are documented privately outside the repo. Good-faith
+  notification is satisfied and this item needs no revisiting; publicity is
+  unblocked. **Still pending:** notarize macOS .app if going broad
+  (currently ad-hoc = right-click→Open).
   Decisions locked (S11): CMake; native per-OS release formats;
   unsigned/ad-hoc macOS .app for now (Gatekeeper bypass = right-click
   → Open; upgrade to notarized later if/when publishing publicly).

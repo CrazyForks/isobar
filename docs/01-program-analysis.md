@@ -6,7 +6,8 @@ it describes what the program does (algorithms, constants, file formats, GUI
 behavior) so an independent implementation can be written from it. It is not
 derived from any published source; the facts below were established by
 reverse-engineering analysis of the binary, re-derived against the public
-WEFAX (ITU-R F.460) standard where applicable, and cross-checked against the
+WEFAX standard (WMO-No. 386, *Manual on the Global Telecommunication System*,
+Vol. I, Part III, §5) where applicable, and cross-checked against the
 program's observed behavior.
 
 Symbol names of the form `sub_XXXXXXXX`, `dword_XXXXXX`, `unk_XXXXXX` are
@@ -16,14 +17,26 @@ identifiers; they are kept here as stable anchors for the analysis. See
 
 ## 1. What the program is
 
-KG-FAX decodes shortwave (HF) weather-fax broadcasts (WEFAX, emission F3C)
-from soundcard audio. It targets the standard WEFAX signal:
+KG-FAX decodes shortwave (HF) weather-fax broadcasts (WEFAX, emission J3C)
+from soundcard audio. It targets the standard WEFAX signal (WMO-No. 386
+Part III §5; section numbers below refer to it):
 
-- FM subcarrier: **1500 Hz = black, 2300 Hz = white**, 1900 Hz center.
-- Drum speeds **120 rpm** (0.5 s/line) and **60 rpm** (1.0 s/line).
-- IOC 288/576 implied by the 1500-px line width (no explicit IOC constant).
-- Start tone **300 Hz**, stop tone **450 Hz** (detected as AM on the demodulated
-  brightness signal).
+- FM sub-carrier: **1500 Hz = black, 2300 Hz = white**, 1900 Hz centre
+  (§5.5.1). This is the sub-carrier-FM case, carried over SSB — hence the
+  J3C designator. The direct-FSK case (§5.5.2, f₀ ±400 Hz on HF) is a
+  different transmission mode and is not what soundcard decoders see.
+- Drum speeds **120 rpm** (0.5 s/line) and **60 rpm** (1.0 s/line); the
+  standard also defines 90 and 240 rpm (§5.1.5), which KG-FAX does not offer.
+- IOC 288/576 implied by the 1500-px line width (no explicit IOC constant);
+  the standard's values are 576 or 288 (§5.1.2).
+- IOC-selection ("start") tone **300 Hz**, stop tone **450 Hz** (detected as AM
+  on the demodulated brightness signal). Per §5.2.2.1 the 300 Hz tone selects
+  IOC 576 and **675 Hz** selects IOC 288 — KG-FAX detects only 300 Hz, i.e. it
+  is IOC-576-only. Per §5.2.5.1 the 450 Hz stop burst is followed by 10 s of
+  continuous black, which KG-FAX does not use as a confirming condition.
+- Phasing signal (§5.2.3.1): 30 s of alternating white/black at 2.0 Hz for
+  120 rpm (1.0/1.5/4.0 Hz for 60/90/240). KG-FAX locks via its own sync-pulse
+  search rather than decoding the phasing signal explicitly.
 - Sync pulses: black pulse at line start; readme lists stations with 8/10/20/45 ms
   pulse lengths.
 
