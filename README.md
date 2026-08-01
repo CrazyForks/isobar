@@ -67,7 +67,7 @@ DSP core is dependency-free.
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 9 headless tests
+ctest --test-dir build        # runs the 10 headless tests
 ```
 
 Install the dependencies first:

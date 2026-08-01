@@ -37,10 +37,12 @@ out.syn
 # against. Keep the full file locally for deeper testing.
 jmh sample.wav
 
-# 15-minute 12 kHz off-air JMH recording (22 MB), supplied 2026-08-01.
-# The only real weak-signal / non-44.1k sample we have — it is what the
-# sync-detector findings in DEVIATIONS.md #16 were measured against.
-# Keep it locally; too big for git as-is.
+# Full 15-minute 12 kHz off-air JMH recording (22 MB), supplied 2026-08-01.
+# GitHub would take it, but git history is permanent and every clone and CI
+# checkout pays for it — so, as with "jmh sample.wav", the 60-second excerpt
+# jmh-offair-12k.wav is committed instead and is what CI runs against.
+# It is the sample the sync-detector findings in DEVIATIONS.md #16 were
+# measured against; keep the full file locally for deeper testing.
 HDSDR_20260801_032125Z_13987kHz_AF.wav
 
 # Stray source video (an internet recording used for early hand-tests;
