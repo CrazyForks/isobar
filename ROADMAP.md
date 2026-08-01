@@ -222,8 +222,10 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   comdlg32/ole32 for Fl_Printer/Fl_Native_File_Chooser).
   **Repo pushed** (S15): github.com/sakuragawasara/isobar, full commit
   history kept (9 commits incl. diag — user decision, shows real work).
-  **Still pending:** tag `v1.0.0` to trigger release.yml (untested
-  end-to-end); contact K.G. before publicizing widely; notarize macOS
+  **Released v1.0.0** (S15): `release.yml` on the `v1.0.0` tag builds per-OS
+  packages (macOS `.dmg`, Windows `.zip`, Linux tarball) via CPack and
+  attaches them to a GitHub Release. CI green on macOS/Linux/Windows.
+  **Still pending:** contact K.G. before publicizing widely; notarize macOS
   .app if going broad (currently ad-hoc = right-click→Open).
   Decisions locked (S11): CMake; native per-OS release formats;
   unsigned/ad-hoc macOS .app for now (Gatekeeper bypass = right-click

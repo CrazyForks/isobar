@@ -1,5 +1,8 @@
 # Isobar
 
+[![Build](https://github.com/skgsara/isobar/actions/workflows/build.yml/badge.svg)](https://github.com/skgsara/isobar/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/skgsara/isobar?include_prereleases)](https://github.com/skgsara/isobar/releases)
+
 **A cross-platform HF weather-fax (WEFAX, emission F3C) decoder.**
 
 Isobar decodes the weather-fax images broadcast over shortwave by agencies
@@ -13,6 +16,20 @@ and writes KG-FAX `.syn` files and the `kgfax.ini` settings file.
 > source is original, written from a functional specification produced by
 > reverse engineering. See [`NOTICE`](NOTICE) for the full provenance
 > statement and [`docs/README.md`](docs/README.md) for the legal footing.
+
+## Download
+
+Prebuilt binaries for macOS, Windows, and Linux are attached to each
+[**Release**](https://github.com/skgsara/isobar/releases):
+
+- **macOS** — `Isobar-<version>-macOS.dmg` (an `Isobar.app` bundle; ad-hoc
+  signed, so right-click → Open the first time to clear Gatekeeper).
+- **Windows** — `Isobar-<version>-windows.zip` (a portable folder with the
+  `.exe` and its runtime icon).
+- **Linux** — `Isobar-<version>-linux.tar.bz2` (a portable folder; needs
+  FLTK + RtAudio system libraries installed — see Build below).
+
+To build from source instead, see [Build](#build).
 
 ## What it does
 
@@ -80,12 +97,13 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-Working software, pre-release. All core receive features are implemented
-and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md) for the
-milestone map (M0–M5 done; M6 = packaging & cross-platform CI). Continuous
-builds run on macOS, Linux, and Windows via GitHub Actions
+**v1.0.0 released** — working software. All core receive features are
+implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
+for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
+Continuous builds run on macOS, Linux, and Windows via GitHub Actions
 (`.github/workflows/`); tags `v*.*.*` produce native release packages
-(macOS `.dmg`, Windows `.zip`, Linux tarball) attached to a GitHub Release.
+(macOS `.dmg`, Windows `.zip`, Linux tarball) attached to a
+[GitHub Release](https://github.com/skgsara/isobar/releases).
 
 ## License
 

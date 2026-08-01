@@ -52,7 +52,8 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (release prep) in progress. **First real reception
+workflow is complete; M6 (packaging & cross-platform CI) done — v1.0.0
+released, CI green on macOS/Linux/Windows. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
 test fixture is the committed 30 s excerpt `jmh-sample-short.wav` (44.1 kHz
