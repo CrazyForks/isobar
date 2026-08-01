@@ -48,7 +48,10 @@ find_program(FLTK_CONFIG_EXECUTABLE NAMES fltk-config)
 set(ISOBAR_FLTK_MODE "")
 message(STATUS "isobar diag: FLTK_CONFIG_EXECUTABLE=[${FLTK_CONFIG_EXECUTABLE}]")
 
-if(FLTK_CONFIG_EXECUTABLE)
+# fltk-config is a Unix shell script emitting gcc-style flags (-lfltk, -L…),
+# which don't work under MSVC. vcpkg ships it under tools/fltk/ but on Windows
+# we must use the CMake config instead. Skip fltk-config entirely on WIN32.
+if(FLTK_CONFIG_EXECUTABLE AND NOT WIN32)
     set(ISOBAR_FLTK_MODE "fltk-config")
     execute_process(COMMAND ${FLTK_CONFIG_EXECUTABLE} --cxxflags
         OUTPUT_VARIABLE FLTK_CXXFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
