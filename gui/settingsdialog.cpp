@@ -102,14 +102,17 @@ bool settings_dialog_run(KgSettings &s)
     add_label(GX + 8, GY + 20, 96, "Sync detect");
     d.th = new Fl_Choice(GX + 120, GY + 16, 57, 20);
     d.th->textsize(10);
-    for (int i = 0; i < 8; i++) {           /* 20*i+10: 10..150 */
-        char buf[8];
-        snprintf(buf, sizeof buf, "%d", 20 * i + 10);
-        d.th->add(buf);
-    }
+    /* The original's 3 named presets (DFM ComboBox1.Items.Strings):
+     *   厳しい (Strict)  index 0 -> SyncThre 10
+     *   通常   (Normal)  index 1 -> SyncThre 30
+     *   優しい (Gentle)  index 2 -> SyncThre 50
+     * via the traced formula SyncThre = 20*index + 10. */
+    d.th->add("Strict");
+    d.th->add("Normal");
+    d.th->add("Gentle");
     int ti = (work.synthre - 10) / 20;      /* value -> combo index */
     if (ti < 0) ti = 0;
-    if (ti > 7) ti = 7;
+    if (ti > 2) ti = 2;                     /* only 3 presets */
     d.th->value(ti);
     add_label(GX + 8, GY + 45, 90, "Lock/release");
     d.lr = add_spinner(GX + 120, GY + 40, 1, 100, work.lresycn);

@@ -116,7 +116,9 @@ port's modal dialog adds them below the groups, so its window is
 320x192. The Panel+UpDown pairs become spinners. The Info group text
 is neutral port info, NOT the original's version string/branding
 (legal policy). Control-to-setting mapping (by row, top to bottom):
-ComboBox1 = SyncThre (value 20*index+10), then spinners LReSycn,
+ComboBox1 = SyncThre (value 20*index+10); its 3 items are the named
+presets 厳しい/通常/優しい (index 0/1/2 = Strict/Normal/Gentle ->
+SyncThre 10/30/50), then spinners LReSycn,
 RReSycn, SyncWidth (n where width = 10*n ms), Sync2Thre, DetTime.
 
 | Control | Class | Left | Top | Width | Height | Caption | English |
@@ -130,7 +132,7 @@ RReSycn, SyncWidth (n where width = 10*n ms), Sync2Thre, DetTime.
 | Label7 (GroupBox3) | TLabel | 8 | 121 | 96 | 12 | 制御信号検出時間 | Ctl det time |
 | Panel4 (GroupBox3) | TPanel | 120 | 59 | 41 | 17 | Panel4 | (spinner) |
 | UpDown4 (GroupBox3) | TUpDown | 160 | 59 | 17 | 17 |  |  |
-| ComboBox1 (GroupBox3) | TComboBox | 120 | 16 | 57 | 20 |  |  |
+| ComboBox1 (GroupBox3) | TComboBox | 120 | 16 | 57 | 20 | (Items: 厳しい/通常/優しい) | SyncThre preset (20*i+10) |
 | Panel5 (GroupBox3) | TPanel | 120 | 78 | 41 | 17 | Panel5 | (spinner) |
 | UpDown5 (GroupBox3) | TUpDown | 160 | 78 | 17 | 17 |  |  |
 | Panel1 (GroupBox3) | TPanel | 120 | 40 | 41 | 17 | Panel1 | (spinner) |

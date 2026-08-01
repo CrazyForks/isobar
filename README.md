@@ -100,7 +100,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.0.1 released** — working software. All core receive features are
+**v1.0.2 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
 Continuous builds run on macOS, Linux, and Windows via GitHub Actions

@@ -255,6 +255,11 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   gate is unchanged. Proven via a `v1.1.0-rc1` dry-run first (4/4 jobs
   green, all 3 packages downloaded and verified self-contained), then
   tagged `v1.0.1` on main. Squash-merged as PR #1.
+  **Released v1.0.2** (S19): patch release — two bug fixes since v1.0.1
+  (the S18 stale `sakuragawasara/isobar` URL fix + the S19 Form4
+  sync-preset combo restored to the original's 3 named presets Strict/
+  Normal/Gentle). No build/packaging changes; same self-contained
+  per-OS packages.
   **Known limitation (tracked):** the macOS `.app` is Apple-Silicon-only
   (dylibs from `/opt/homebrew`; Intel-Mac `/usr/local` paths differ). A
   universal build would close that gap. **Resolved in v1.0.1:** the dynamic-
