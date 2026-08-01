@@ -108,12 +108,13 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.1.0 released** — working software. All core receive features are
+**v1.1.1 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
-Continuous builds run on macOS, Linux, and Windows via GitHub Actions
-(`.github/workflows/`); tags `v*.*.*` produce self-contained native release
-packages (macOS `.dmg`, Windows `.zip`, Linux `.AppImage`) attached to a
+Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —
+via GitHub Actions (`.github/workflows/`); tags `v*.*.*` produce five
+self-contained native release packages (two macOS `.dmg`s, a Windows `.zip`,
+and x86_64 + aarch64 `.AppImage`s) attached to a
 [GitHub Release](https://github.com/skgsara/isobar/releases).
 
 ## License

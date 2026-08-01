@@ -283,10 +283,27 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   reflowed (name+version on one line, FLTK/RtAudio credited) and the dead
   RtAudio homepage URL replaced in `NOTICE`/`README.md`. No build/packaging
   changes; same self-contained per-OS packages.
-  **Known limitation (tracked):** the macOS `.app` is Apple-Silicon-only
-  (dylibs from `/opt/homebrew`; Intel-Mac `/usr/local` paths differ). A
-  universal build would close that gap. **Resolved in v1.0.1:** the dynamic-
-  linking limitation that affected all 3 platforms in v1.0.0.
+  **Released v1.1.1 — packaging (S22):** five packages instead of three.
+  The macOS `.app` was Apple-Silicon-only (dylibs from `/opt/homebrew`;
+  Intel-Mac `/usr/local` paths differ) — there is now a second `.dmg` built
+  on an Intel runner, shipped separately rather than as one universal binary
+  (user decision: each is tested on the CPU it targets, and dropping Intel
+  later is one matrix entry to delete). Linux gains an `aarch64` AppImage
+  for Raspberry-Pi-class boards. Windows stays x64 — Windows-on-ARM runs it
+  under the OS's own emulation. Release runners are now **pinned**, because
+  the runner's OS sets the package's minimum supported OS: `macos-latest`
+  had become macOS 26, so v1.1.0 shipped an `.app` with `minos 26.0` that
+  required Tahoe; `macos-15` brings that back to macOS 15, and `ubuntu-22.04`
+  (glibc 2.35) reaches Raspberry Pi OS bookworm. Also fixed: the Windows
+  `.exe`s carried no icon and no version metadata (nothing compiled a
+  resource script), and `isobar-gui` was linked for the console subsystem,
+  so a console window opened behind the app. One source change came with it:
+  `<cstddef>` added to `core/syncscan.cpp` + `core/decoder.cpp`, which the
+  new gcc-11 runners rejected (`size_t` used unqualified, and older
+  libstdc++ does not leak it through `<vector>`). No decoder behaviour
+  changed — hence a patch bump.
+  **Resolved in v1.0.1:** the dynamic-linking limitation that affected all
+  3 platforms in v1.0.0.
   **Contacting K.G. — CLOSED 2026-08-01 (S20): attempted twice, undeliverable.**
   Mail to his published address (from the original readme.txt) was rejected by
   his own mail server, and an identical rejection came back from a second,
