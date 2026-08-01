@@ -161,8 +161,9 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   Draft Japanese email uses 互換実装 framing (NOT 復刻, NOT 個人研究 —
   those misframe GitHub publication), plain factual tone, no "please
   permit me" (creates a false authorization narrative).
-- 🔶 Packaging & cross-platform CI — **5-phase arc, Phases 1–5 + audit ✅
-  code-done (Sessions 11–14); only the push remains**:
+- 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
+  GitHub (Sessions 11–15)**. Repo is live at github.com/sakuragawasara/isobar;
+  `build.yml` passes on macos-latest / ubuntu-latest / windows-latest:
   0. ✅ **Pre-publish repo audit** (S13) — `.gitignore` hardened and
      dry-run-verified (no private/derivative files would be tracked); test
      fixture trimmed to a committed 30 s excerpt (`jmh-sample-short.wav`,
@@ -186,18 +187,18 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      the portrait + replaces stale "port in progress" with © Sara
      Sakuragawa / GPL v3+ / real version. **User-verified: Dock icon +
      Details dialog both show the portrait.**
-  4. ✅ **GitHub Actions matrix** (S14) — `.github/workflows/build.yml`:
+  4. ✅ **GitHub Actions matrix** (S14, green S15) — `.github/workflows/build.yml`:
      `macos-latest`/`ubuntu-latest`/`windows-latest` matrix (install deps
-     → cmake build → ctest → upload raw binaries). Required making the
-     codebase actually cross-platform (see S14 must-fixes below).
+     → cmake build → ctest → upload raw binaries). **GREEN on all 3 OSes**
+     after the S15 debugging pass below.
   5. ✅ **CPack release formats** (S14) — install rules + CPack config in
      `CMakeLists.txt` (macOS `.dmg` DragNDrop, Windows `.zip`, Linux
      tarball); `.github/workflows/release.yml` on `v*.*.*` tags: matrix
      build → ctest gate → cpack → renamed native artifacts attached to a
      GitHub Release (auto-generated notes, `-` in tag = prerelease).
      AppImage deliberately deferred (needs linuxdeploy; tarball is the
-     simple Linux story).
-  **S14 must-fixes (made the CI matrix actually build off macOS):**
+     simple Linux story). **Not yet exercised end-to-end on a real tag.**
+  **S14 must-fixes (made the code cross-platform):**
   `RtAudio::MACOSX_CORE` hardcoded → default ctor in `gui/audio.cpp`
   (×2) + `cli/playwav.cpp`; `M_PI` → local `PI` constant in
   `core/tonedetect.cpp` + `cli/tone-test.cpp` + `cli/resample-test.cpp`
@@ -208,9 +209,22 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   published docs) + ~10 stale-fact fixes (Form4 captions, BSD→Windows,
   `kgfax-port/`→`isobar/` tree, core/README omissions, dead SESSION-LOG
   pointers). `.gitignore` now also catches chat-export dumps.
-  **Still pending:** `git init` + first commit + push (only the
-  outward-facing step remains; the local dry-run is clean — 82 files,
-  no private/derivative leaks).
+  **S15 must-fixes (got CI green — bugs no Mac-only dev box could catch):**
+  RtAudio v5/v6 API split → `gui/rtaudio_compat.h` shim (Debian apt=v5
+  throws; Homebrew/vcpkg=v6 returns errors); FLTK 1.3/1.4 `Fl_Printer`
+  `start_job(pagecount)` vs `begin_job()` → `FL_API_VERSION` guard in
+  `gui/main.cpp`; GNU ld single-pass link ordering → feed fltk-config
+  ldflags via `target_link_libraries` not link_options (Linux); vcpkg
+  FLTK 1.3 exports bare `fltk`/`fltk_images` targets with EMPTY
+  `FLTK_LIBRARIES` AND ships `fltk-config` (Unix script) that silently
+  links nothing under MSVC → skip fltk-config on WIN32, probe target
+  names, `FATAL_ERROR` on empty, add Win32 system libs (comctl32/
+  comdlg32/ole32 for Fl_Printer/Fl_Native_File_Chooser).
+  **Repo pushed** (S15): github.com/sakuragawasara/isobar, full commit
+  history kept (9 commits incl. diag — user decision, shows real work).
+  **Still pending:** tag `v1.0.0` to trigger release.yml (untested
+  end-to-end); contact K.G. before publicizing widely; notarize macOS
+  .app if going broad (currently ad-hoc = right-click→Open).
   Decisions locked (S11): CMake; native per-OS release formats;
   unsigned/ad-hoc macOS .app for now (Gatekeeper bypass = right-click
   → Open; upgrade to notarized later if/when publishing publicly).
