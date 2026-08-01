@@ -1,3 +1,5 @@
+<img src="assets/isobar-512.png" alt="Isobar icon" width="120" align="right">
+
 # Isobar
 
 [![Build](https://github.com/skgsara/isobar/actions/workflows/build.yml/badge.svg)](https://github.com/skgsara/isobar/actions/workflows/build.yml)
@@ -23,14 +25,20 @@ Prebuilt, **self-contained** binaries for macOS, Windows, and Linux are
 attached to each [**Release**](https://github.com/skgsara/isobar/releases)
 — no FLTK/RtAudio install needed on the target machine:
 
-- **macOS** — `Isobar-<version>-macOS.dmg` (an `Isobar.app` bundle with the
-  FLTK/RtAudio dylibs embedded in `Contents/Libraries/`; ad-hoc signed, so
-  right-click → Open the first time to clear Gatekeeper).
+- **macOS** — `Isobar-<version>-macOS-AppleSilicon.dmg` (M1 and later) or
+  `-macOS-Intel.dmg`. Each holds an `Isobar.app` bundle with the FLTK/RtAudio
+  dylibs embedded in `Contents/Libraries/`; ad-hoc signed, so right-click →
+  Open the first time to clear Gatekeeper. Needs macOS 15 or newer, since
+  the bundled libraries are built against it.
 - **Windows** — `Isobar-<version>-windows.zip` (a portable folder; FLTK +
   RtAudio are statically linked into the `.exe`, so there are no DLLs to
-  install).
-- **Linux** — `Isobar-<version>-linux.AppImage` (a single file — `chmod +x`
-  and run; the FLTK/RtAudio `.so`s are bundled inside).
+  install). x64; on Windows-on-ARM machines it runs under the system's own
+  x64 emulation.
+- **Linux** — `Isobar-<version>-linux-x86_64.AppImage` or
+  `-linux-aarch64.AppImage` (a single file — `chmod +x` and run; the
+  FLTK/RtAudio `.so`s are bundled inside). The `aarch64` one is for ARM
+  boards such as the Raspberry Pi. Both are built on Ubuntu 22.04, so they
+  need glibc 2.35 or newer (Debian 12 / Raspberry Pi OS bookworm and up).
 
 To build from source instead, see [Build](#build).
 

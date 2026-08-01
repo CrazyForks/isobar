@@ -1,6 +1,16 @@
-# Release packaging: on a pushed tag (v*.*.*), build per-OS via the build
-# workflow's job, run CPack to produce the native package (.dmg / .zip /
-# tarball), and attach them to a GitHub Release.
+# Release packaging: on a pushed tag (v*.*.*), build per OS/architecture, make
+# each platform's package self-contained, and attach them to a GitHub Release.
+#
+# Five packages:
+#   Isobar-<tag>-macOS-AppleSilicon.dmg
+#   Isobar-<tag>-macOS-Intel.dmg
+#   Isobar-<tag>-windows.zip             x64 (runs on Windows-on-ARM by emulation)
+#   Isobar-<tag>-linux-x86_64.AppImage
+#   Isobar-<tag>-linux-aarch64.AppImage  Raspberry Pi and other ARM boards
+#
+# The two Macs ship as separate downloads rather than one universal binary
+# (decision 2026-08-01): each is built and tested on its own kind of Mac, and
+# when Intel support is eventually dropped it is one matrix entry to delete.
 #
 # This is separate from build.yml so pushes to main only run the build+test
 # gate; tags drive the actual release artifacts.
@@ -26,11 +36,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            artifact: Isobar-${{ github.ref_name }}-macOS.dmg
-          - os: ubuntu-latest
-            artifact: Isobar-${{ github.ref_name }}-linux.AppImage
+          # macOS/Ubuntu versions are PINNED, not -latest, because the runner's
+          # OS sets the package's minimum supported OS: we link (and ship) the
+          # runner's Homebrew dylibs / glibc. Built on macos-latest, the v1.1.0
+          # .app came out with minos 26.0 — unusable on any older macOS. 15 is
+          # the oldest image with both CPU variants, so both Macs share a floor.
+          - os: macos-15            # Apple Silicon
+            arch: arm64
+            artifact: Isobar-${{ github.ref_name }}-macOS-AppleSilicon.dmg
+          - os: macos-15-intel      # Intel
+            arch: x86_64
+            artifact: Isobar-${{ github.ref_name }}-macOS-Intel.dmg
+          # Ubuntu 22.04 = glibc 2.35, old enough for Debian 12 / Raspberry Pi
+          # OS bookworm (2.36); 24.04's 2.39 would exclude them.
+          - os: ubuntu-22.04
+            arch: x86_64
+            artifact: Isobar-${{ github.ref_name }}-linux-x86_64.AppImage
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+            artifact: Isobar-${{ github.ref_name }}-linux-aarch64.AppImage
           - os: windows-latest
+            arch: x64
             artifact: Isobar-${{ github.ref_name }}-windows.zip
 
     steps:
@@ -72,7 +98,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test (gate the release on the 7 headless tests)
+      - name: Test (gate the release on the 8 headless tests)
         working-directory: build
         run: ctest -C Release --output-on-failure
 
@@ -100,6 +126,11 @@ jobs:
             echo "ERROR: Homebrew dylib path leaked into the bundle"; exit 1
           fi
           echo "Bundle is self-contained."
+          # Gate: the .dmg must match the CPU it is named for, and must not
+          # quietly require a newer macOS than the runner we pinned.
+          lipo -info "$APP/Contents/MacOS/Isobar" | grep -q '${{ matrix.arch }}' \
+            || { echo "ERROR: binary is not ${{ matrix.arch }}"; exit 1; }
+          otool -l "$APP/Contents/MacOS/Isobar" | grep -m1 minos
 
       # Linux: AppImage. linuxdeploy runs ldd on the binary, copies every
       # non-system .so into the AppDir, writes an AppRun launcher, and packs
@@ -108,11 +139,17 @@ jobs:
       # librtaudio-dev ships no static lib anyway.)
       - name: Package AppImage (Linux)
         if: runner.os == 'Linux'
+        env:
+          # Run the linuxdeploy AppImages by self-extraction instead of
+          # mounting them — runner images don't reliably carry FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
-          # linuxdeploy + its appimage output plugin (continuous channel).
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-appimage-x86_64.AppImage
+          # linuxdeploy + its appimage output plugin (continuous channel),
+          # for this job's architecture.
+          BASE=https://github.com/linuxdeploy
+          wget -q "$BASE/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage"
+          wget -q "$BASE/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-${{ matrix.arch }}.AppImage"
+          chmod +x linuxdeploy-${{ matrix.arch }}.AppImage linuxdeploy-plugin-appimage-${{ matrix.arch }}.AppImage
 
           # Lay out the AppDir (FHS-style: usr/bin, usr/share/...).
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
@@ -123,7 +160,7 @@ jobs:
 
           # linuxdeploy deploys all .so deps + writes AppRun + emits the AppImage.
           export OUTPUT="${{ matrix.artifact }}"
-          ./linuxdeploy-x86_64.AppImage \
+          ./linuxdeploy-${{ matrix.arch }}.AppImage \
             --appdir AppDir \
             --executable AppDir/usr/bin/isobar-gui \
             --desktop-file AppDir/usr/share/applications/isobar.desktop \
@@ -137,7 +174,7 @@ jobs:
         run: cpack -C Release
 
       # macOS CPack (DragNDrop) names it Isobar-<ver>-Darwin.dmg; Windows CPack
-      # (ZIP) names it Isobar-<ver>-win64.zip. Rename to the per-OS release
+      # (ZIP) names it Isobar-<ver>-win64.zip. Rename to the per-package release
       # name. (Linux's AppImage was already named correctly by OUTPUT= above.)
       - name: Rename CPack artifact (macOS / Windows)
         if: runner.os != 'Linux'
@@ -185,6 +222,11 @@ jobs:
   publish:
     name: publish GitHub Release
     needs: package
+    # Tags only. A manual workflow_dispatch on a branch then builds all five
+    # packages and leaves them as workflow artifacts to inspect, without
+    # creating a GitHub Release named after the branch — that is how packaging
+    # changes get tested before a tag goes out.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

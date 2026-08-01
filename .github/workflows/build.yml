@@ -1,8 +1,8 @@
 # Cross-platform build + test for Isobar.
 #
-# Matrix: macOS / Linux / Windows. Each job installs the FLTK + RtAudio
-# dependencies, configures with CMake, builds, and runs the 7 headless ctest
-# tests (no audio hardware, no display needed — verified by the ctest set).
+# Matrix: macOS / Linux / Windows, on both Intel and ARM. Each job installs the
+# FLTK + RtAudio dependencies, configures with CMake, builds, and runs the 8
+# headless ctest tests (no audio hardware, no display needed).
 # Raw build artifacts are uploaded per OS for manual inspection.
 #
 # See docs/README.md "Legal / provenance policy": this workflow only ever
@@ -22,7 +22,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # Both CPU families of every OS the release ships, so an
+        # architecture-specific break shows up on a push rather than at tag
+        # time. (Windows ARM is not built: the x64 .zip runs there under the
+        # OS's own emulation.)
+        os:
+          - macos-latest        # Apple Silicon
+          - macos-15-intel      # Intel
+          - ubuntu-latest       # x86_64
+          - ubuntu-22.04-arm    # ARM64 (Raspberry Pi class)
+          - windows-latest
 
     steps:
       - uses: actions/checkout@v4

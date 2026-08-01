@@ -241,6 +241,35 @@ isobar_link_rtaudio(isobar-gui)
 if(WIN32)
     target_link_libraries(isobar-gui PRIVATE
         comctl32 ws2_32 gdi32 user32 shell32 ole32 oleaut32 uuid comdlg32)
+    # Link the GUI for the Windows GUI subsystem instead of the console one:
+    # a console-subsystem binary opens a black console window behind the app
+    # every time it starts. The GUI subsystem's entry point is WinMain, which
+    # FLTK supplies (it calls our plain main()). isobar-decode deliberately
+    # stays a console program — it writes its progress to stdout.
+    set_target_properties(isobar-gui PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+# --- Windows resources: exe icon + Properties→Details --------------------------
+# Explorer takes an executable's icon from an ICON resource inside the binary,
+# so assets/isobar.ico has to be *compiled in* — installing it next to the exe
+# (as the flat package does, for the runtime window icon) is not enough. One .rc
+# is generated per executable so each carries its own name/description.
+if(WIN32)
+    enable_language(RC)
+    function(isobar_add_win_resource target filename description)
+        set(ISOBAR_RC_NAME "${target}")
+        set(ISOBAR_RC_FILENAME "${filename}")
+        set(ISOBAR_RC_DESCRIPTION "${description}")
+        configure_file(
+            ${CMAKE_SOURCE_DIR}/cmake/isobar.rc.in
+            ${CMAKE_BINARY_DIR}/${target}.rc
+            @ONLY)
+        target_sources(${target} PRIVATE ${CMAKE_BINARY_DIR}/${target}.rc)
+    endfunction()
+    isobar_add_win_resource(isobar-gui    "isobar-gui.exe"
+        "Isobar - HF weather-fax (WEFAX) decoder")
+    isobar_add_win_resource(isobar-decode "isobar-decode.exe"
+        "Isobar WEFAX decoder (command line)")
 endif()
 
 # --- macOS .app bundle -------------------------------------------------------
