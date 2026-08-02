@@ -63,6 +63,32 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     The ini's `FallbackDepth` still drives the dip-depth second chance;
     pointing it at `fb_mean` instead is a possible follow-up.
     The other ten ini defaults are adopted exactly.
+    **A step in the sync position is followed on confirmation, and every
+    other fallback result is rate-limited rather than rejected** (added
+    2026-08-02; `sync_step_lock()` and `sync_slew()` in `core/syncscan.h`,
+    shared by the batch and live paths). The original's `SyncWidth` guard
+    *rejects* a fallback position further than `MaxJump` from the previous
+    one. Ours cannot, for two reasons.
+    First, the sync strip is rotated to index 0 — the seam where a line
+    wraps — so a phase error does not shift a line, it **splits the strip**,
+    half at each end, which is what the user sees when the Sync corr LED
+    lights.
+    Second, **real transmissions step further than `MaxJump`**: measured
+    directly, the 12 kHz off-air recording's true sync moves from 2131 to
+    1969 between one line and the next and holds the new position for the
+    rest of the reception, and `jmh sample.wav` does the same at line 930
+    where a new transmission starts. Rejecting means crawling toward the new
+    position for a dozen lines, every one of them split — measured, it
+    raised mis-phased picture lines on the off-air recording from 36 to 211.
+    So a whole-line search runs first, accepted only when the pulse is
+    unambiguous (nearest rival ≥ 300 samples away and ≥ `DarkThreshold`/2
+    brighter) *and* the previous line agreed on the same position: the step
+    is then taken whole, costing one line instead of a dozen. Everything
+    else is rate-limited — `MaxJump`/4 samples on the first line, doubling
+    per consecutive line agreeing on the direction. Line-to-line strip
+    movement over 10 px, on the three full recordings: `jmh sample` 54→13,
+    `FAXSignal` 25→18, off-air **56→8**; mis-phased picture lines off-air
+    **36→13**. Guarded by `slew-test`.
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is

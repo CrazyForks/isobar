@@ -42,7 +42,9 @@ jmh sample.wav
 # checkout pays for it — so, as with "jmh sample.wav", the 60-second excerpt
 # jmh-offair-12k.wav is committed instead and is what CI runs against.
 # It is the sample the sync-detector findings in DEVIATIONS.md #16 were
-# measured against; keep the full file locally for deeper testing.
+# measured against; keep the full file locally for deeper testing. A second
+# 60-second excerpt, jmh-slew-12k.wav (50..110 s), is committed too — that
+# stretch runs on the fallback and guards the sync-strip split (slew-test).
 HDSDR_20260801_032125Z_13987kHz_AF.wav
 
 # Full 18.8-minute 16 kHz recording of two back-to-back JMH HIMAWARI IR

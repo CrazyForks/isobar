@@ -98,7 +98,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test (gate the release on the 11 headless tests)
+      - name: Test (gate the release on the 12 headless tests)
         working-directory: build
         run: ctest -C Release --output-on-failure
 

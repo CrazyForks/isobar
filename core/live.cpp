@@ -22,6 +22,10 @@ void LiveScan::reset()
     edges.clear();
     run_start = -1;
     phi = 0;
+    fb_dir = 0;
+    fb_run = 0;
+    cand = -1;
+    cand_hits = 0;
     ever_locked = false;
     locked = false;
     last_shape = -1;
@@ -274,6 +278,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
             man_req.store(false);
             long d = man_delta.load() % LINE_SAMPLES;
             phi = (phi + d + LINE_SAMPLES) % LINE_SAMPLES;
+            fb_dir = 0;
+            fb_run = 0;
+            cand = -1;
+            cand_hits = 0;
             track_applied = true;
             locked = true;
             ever_locked = true;
@@ -317,6 +325,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     return;      /* undecidable yet: wait */
                 if (E >= 0) {
                     phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    fb_dir = 0;
+                    fb_run = 0;
+                    cand = -1;
+                    cand_hits = 0;
                     last_shape = E;
                     if (ever_locked)
                         relocks++;
@@ -345,6 +357,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                        fb_dir = 0;
+                        fb_run = 0;
+                        cand = -1;
+                        cand_hits = 0;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -363,6 +379,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 /* fallback: full window until first lock, narrow
                  * window after (docs/01 sec. 3.2(8)) */
                 long fb = -1;
+                bool snapped = false;
                 long flo = grid, fhi = grid + LINE_SAMPLES - 1;
                 bool have = true;
                 if (ever_locked) {
@@ -372,8 +389,11 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     } else {
                         have = false;
                     }
+                    /* whole-line step first - mirrors syncscan exactly */
+                    fb = sync_step_lock(sm, grid, phi, p, cand, cand_hits);
+                    snapped = fb >= 0;
                 }
-                if (have) {
+                if (fb < 0 && have) {
                     /* ported tracker first, our dip-depth search as the
                      * second chance - mirrors syncscan exactly */
                     fb = fallback_edge(flo, fhi, expected);
@@ -381,7 +401,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         fb = fallback(flo, fhi);
                 }
                 if (fb >= 0) {
-                    phi = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    if (snapped) {
+                        phi = tgt;
+                        since_shape = 0;
+                    } else {
+                        phi = sync_slew(phi, tgt, p, fb_dir, fb_run);
+                    }
                     how = 1;
                     miss = 0;
                 } else {

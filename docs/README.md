@@ -56,7 +56,7 @@ workflow is complete; M6 (packaging & cross-platform CI) done — v1.3.0
 released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
-there are three committed test fixtures, each covering something the others
+there are four committed test fixtures, each covering something the others
 cannot. `jmh-sample-short.wav` is a 30 s excerpt (44.1 kHz stereo Int16) of a
 strong signal — the full 9.6 min recording exists locally but is gitignored at
 97 MB, and tests auto-detect whichever is present. `jmh-offair-12k.wav` is 60 s
@@ -67,7 +67,11 @@ paths that CI checks on x86_64 and aarch64 alike. `jmh-phasing-16k.wav` is 90 s
 at 16 kHz of two back-to-back HIMAWARI IR charts (added v1.3.0): the only
 fixture containing a full transmission preamble — ~33 s of all-dark phasing
 lines between two pictures — which is the case that exposed the v1.3.0 phase
-runaway (`phasing-test`).
+runaway (`phasing-test`). `jmh-slew-12k.wav` is a second 60 s cut of the same
+12 kHz off-air recording, from 50..110 s instead of the opening minute: the
+only fixture taken from a stretch where the shape check keeps failing, so the
+fallback runs constantly and the sync strip's stability under it can be
+measured (`slew-test`).
 
 ## How the next contributor should use this
 

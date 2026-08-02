@@ -233,6 +233,10 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
      * moves. Lines are emitted from the very start (state 3 until lock),
      * like the original - the sync/phasing preamble is part of the image. */
     long phi = 0;             /* rotation offset within the line window */
+    int fb_dir = 0;           /* direction of the current far-fallback run */
+    int fb_run = 0;           /* consecutive far results agreeing on it    */
+    long cand = -1;           /* whole-line pulse a step is building on    */
+    int cand_hits = 0;        /* consecutive lines that agreed on it       */
     bool ever_locked = false; /* fallback search: full window until then */
     bool locked = false;      /* currently locked (release clears)      */
     long last_shape = -1;     /* absolute pos of last shape-locked edge */
@@ -297,6 +301,10 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                 if (nl < edges.size()) {
                     long E = edges[nl];
                     phi = (E - grid) % LINE_SAMPLES;
+                    fb_dir = 0;
+                    fb_run = 0;
+                    cand = -1;
+                    cand_hits = 0;
                     last_shape = E;
                     if (ever_locked)
                         img.relocks++;   /* re-acquire after release */
@@ -324,6 +332,10 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                        fb_dir = 0;
+                        fb_run = 0;
+                        cand = -1;
+                        cand_hits = 0;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -355,13 +367,30 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                  * fixtures (the ported test alone coasts through 45
                  * picture lines of jmh-phasing-16k that ours corrects). */
                 long fb = -1;
-                if (lo <= hi) {
+                bool snapped = false;
+                /* A genuine step in the sync position is further than
+                 * either narrow search can reach, so look at the whole
+                 * line first - sync_step_lock only answers when the
+                 * pulse is unambiguous and the previous line agreed. */
+                if (ever_locked) {
+                    fb = sync_step_lock(sm, grid, phi, p, cand, cand_hits);
+                    snapped = fb >= 0;
+                }
+                if (fb < 0 && lo <= hi) {
                     fb = fallback_edge(sm, lo, hi, p, expected, ever_locked);
                     if (fb < 0)
                         fb = fallback_search(sm, lo, hi, p);
                 }
                 if (fb >= 0) {
-                    phi = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    /* a confirmed step is taken whole; anything else is
+                     * rate-limited (see sync_slew) */
+                    if (snapped) {
+                        phi = tgt;
+                        since_shape = 0;   /* confirmed, so not a miss */
+                    } else {
+                        phi = sync_slew(phi, tgt, p, fb_dir, fb_run);
+                    }
                     how = 1;
                     miss = 0;
                 } else {

@@ -34,6 +34,25 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   our older min-brightness search validated by a dip depth below the
   local mean. The ported one is the more selective of the two but fires
   less often, and the pair together beat either alone on every fixture.
+  Two rules keep the sync strip solid, both in `syncscan.h` and shared
+  with `live.cpp` so the batch and live paths cannot drift apart. The
+  strip is rotated to index 0 — the seam where a line wraps — so a phase
+  error does not shift a line, it **splits** the strip across both ends,
+  which is what makes such lines unreadable (`slew-test`).
+  `sync_step_lock()` handles a **genuine step** in the sync position:
+  real transmissions jump further than any narrow search reaches (162
+  samples on the off-air recording, mid-picture; a new transmission at
+  line 930 of `jmh sample.wav`). It takes the darkest `syn` window in the
+  whole line, but only when that pulse is unambiguous — nearest rival at
+  least 300 samples away and `DarkThreshold`/2 brighter — and only once
+  the previous line agreed on it. That two-line confirmation is what
+  makes a whole-line search safe here, where a bare one re-locks onto
+  picture content (`phasing-test`). `sync_slew()` handles everything
+  else: a move within `MaxJump` is taken whole, anything further is
+  rate-limited to `MaxJump`/4 samples, doubling for each consecutive line
+  agreeing on the direction. The original rejects a far fallback result
+  outright and we cannot, because that loses the real steps
+  (`DEVIATIONS.md` #16).
   `ReleaseAfter` invalid lines → drop the lock, `LockAfter` valid lines →
   declare it, re-acquiring via a junk-tolerant period chain
   (spec 3.2(7)(8)(10)). 4000 samples → 1500 px via `line[8*i/3]`.

@@ -343,6 +343,7 @@ add_isobar_test(manual-sync-test)
 add_isobar_test(wavrate-test)
 add_isobar_test(offair-test)
 add_isobar_test(phasing-test)
+add_isobar_test(slew-test)
 
 # resample-test needs filters.cpp directly in addition to core.
 add_executable(resample-test cli/resample-test.cpp)

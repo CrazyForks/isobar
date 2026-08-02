@@ -83,6 +83,9 @@ private:
      * [n*4000, (n+1)*4000), emitted rotated by phi; tracking only
      * adjusts phi, the grid never moves */
     long phi;            /* rotation offset within the line window */
+    int fb_dir, fb_run;  /* far-fallback run, for sync_slew (syncscan.h) */
+    long cand;           /* whole-line pulse a step is building on       */
+    int cand_hits;       /* lines that agreed on it (sync_step_lock)     */
     bool ever_locked;    /* fallback search: full window until then */
     bool locked;         /* currently locked (release clears)       */
     long last_shape;     /* absolute pos of last shape-locked edge  */
