@@ -1,6 +1,6 @@
-<img src="assets/isobar-512.png" alt="Isobar icon" width="120" align="right">
-
 # Isobar
+
+<img src="assets/isobar-512.png" alt="Isobar icon" width="120" align="right">
 
 [![Build](https://github.com/skgsara/isobar/actions/workflows/build.yml/badge.svg)](https://github.com/skgsara/isobar/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/skgsara/isobar?include_prereleases)](https://github.com/skgsara/isobar/releases)

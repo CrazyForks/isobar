@@ -178,6 +178,18 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   personal folder, like AGENTS.md). The DMCA-risk rationale is satisfied as
   far as it can be: he was written to at his own published address, twice,
   by independent routes. **This item is closed — do not reopen it.**
+- 🔶 Compiler warnings on the non-Mac toolchains — **open, pre-existing, all
+  cosmetic-or-small; the Mac/clang build is at 0 and must stay there.** CI is
+  green everywhere (nothing is `-Werror`), but two toolchains emit warnings the
+  dev machine cannot see: **MSVC** 6× C4996 (`fopen` in `core/synfile.cpp` ×2,
+  `core/bmpfile.cpp`, `gui/main.cpp`, `cli/kgfax-decode.cpp`; `localtime` in
+  `gui/main.cpp`) plus 1× C4244 `double`→`float` in `gui/progressdialog.cpp`;
+  **gcc** `-Wformat-truncation` in `gui/main.cpp` (a `%s` that can write 159
+  bytes into 151 — the one worth actually reading, not just silencing) and
+  `-Wmaybe-uninitialized` on `rot` in `core/syncscan.h`. Fix pattern for the
+  C4996s is settled: `std::ofstream`/`ifstream`, as `core/settings.cpp` and the
+  S23 test writers already do; `localtime` needs a small portable wrapper.
+  Must be verified by a CI branch run, not locally.
 - 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
   GitHub (Sessions 11–15)**. Repo is live at github.com/skgsara/isobar;
   `build.yml` passes on all five runners — macos-latest / macos-15-intel /
