@@ -74,6 +74,15 @@ struct LiveScan {
     void finish(void (*line_cb)(const uint8_t *line1500, int state,
                                 void *ud), void *ud);
 
+    /* Thread-safe form of finish(), for a UI thread that cannot call it
+     * directly: request_finish() posts the request, the next feed() on
+     * the audio thread performs the flush with that feed's callback, and
+     * finish_done() reports when it has. The caller should wait briefly
+     * for finish_done() before it stops accepting lines, or the flushed
+     * line is emitted into a closed gate and lost anyway. */
+    void request_finish();
+    bool finish_done() const { return fin_done.load(); }
+
     /* stats (same meanings as FaxImage) */
     int lines_locked;
     int lines_corrected;
@@ -112,6 +121,8 @@ private:
     bool track_applied;         /* last state acted on (audio thread) */
     std::atomic<long> man_delta;   /* pending manual align, samples   */
     std::atomic<bool> man_req;     /* manual align posted by UI thread */
+    std::atomic<bool> fin_req;     /* flush posted by the UI thread    */
+    std::atomic<bool> fin_done;    /* ... and performed by feed()      */
 
     void pump(void (*line_cb)(const uint8_t *, int, void *), void *ud);
     long try_lock(long grid);   /* >=0 edge / -1 wait / -2 no chain  */

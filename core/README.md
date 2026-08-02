@@ -122,6 +122,11 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   to override. `finish()` releases the
   line `sync_step_lock`'s lookahead is holding back; call it on the feed
   thread when the stream ends, or the last line never comes out.
+  `request_finish()`/`finish_done()` are the same thing for a UI thread
+  that cannot call it directly — the request is posted and the next
+  `feed()` performs it on the audio thread, which is how the GUI's
+  Scan-off keeps a reception's last line. Both paths are checked against
+  the batch decode (`live-test`).
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
 

@@ -30,7 +30,7 @@ static void on_line(const uint8_t *line, int state, void *ud)
 }
 
 static int run_case(const std::vector<uint8_t> &video, size_t chunk,
-                    const FaxImage &ref)
+                    const FaxImage &ref, bool async_finish)
 {
     LiveScan ls;
     Collect c;
@@ -41,8 +41,26 @@ static int run_case(const std::vector<uint8_t> &video, size_t chunk,
         ls.feed(video.data() + off, n, on_line, &c);
     }
     /* sync_step_lock needs one line of lookahead, so the last line is
-     * held back until the stream is declared over (core/live.h) */
-    ls.finish(on_line, &c);
+     * held back until the stream is declared over (core/live.h).
+     * Both ways of declaring it must give the same result: the direct
+     * call, and the UI-thread form where request_finish() posts and the
+     * next feed() performs it - which is what the GUI's record_off()
+     * relies on to keep a reception's last line. */
+    if (async_finish) {
+        ls.request_finish();
+        if (ls.finish_done()) {
+            fprintf(stderr, "  request_finish reported done before any "
+                            "feed() could perform it\n");
+            return 1;
+        }
+        ls.feed(video.data(), 0, on_line, &c);   /* empty buffer: flush */
+        if (!ls.finish_done()) {
+            fprintf(stderr, "  feed() did not perform the posted flush\n");
+            return 1;
+        }
+    } else {
+        ls.finish(on_line, &c);
+    }
 
     bool ok = c.img.lines.size() == ref.lines.size() &&
               ls.lines_locked == ref.lines_locked &&
@@ -59,8 +77,9 @@ static int run_case(const std::vector<uint8_t> &video, size_t chunk,
             }
         }
     }
-    fprintf(stderr, "chunk %5zu: %4zu lines (L%d C%d P%d R%d) %s\n",
-            chunk, c.img.lines.size(), ls.lines_locked,
+    fprintf(stderr, "chunk %5zu %-6s: %4zu lines (L%d C%d P%d R%d) %s\n",
+            chunk, async_finish ? "async" : "direct",
+            c.img.lines.size(), ls.lines_locked,
             ls.lines_corrected, ls.lines_coasted, ls.relocks,
             ok ? "OK" : "MISMATCH");
     if (!ok) {
@@ -93,7 +112,10 @@ int main()
     const size_t chunks[] = {800, 4000, 7777, 65536, 1000000};
     int fails = 0;
     for (size_t chunk : chunks)
-        fails += run_case(video, chunk, ref);
+        fails += run_case(video, chunk, ref, false);
+    /* the posted-flush path must land in exactly the same place */
+    for (size_t chunk : chunks)
+        fails += run_case(video, chunk, ref, true);
 
     if (fails) {
         fprintf(stderr, "FAIL: %d case(s) mismatched\n", fails);

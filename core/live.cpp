@@ -9,7 +9,8 @@ const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 }
 
 LiveScan::LiveScan(const SyncParams &params)
-    : p(params), track(true), man_delta(0), man_req(false)
+    : p(params), track(true), man_delta(0), man_req(false),
+      fin_req(false), fin_done(false)
 {
     reset();
 }
@@ -36,10 +37,20 @@ void LiveScan::reset()
     lock_from = 0;
     track_applied = true;
     man_req.store(false);
+    fin_req.store(false);
+    fin_done.store(false);
     lines_locked = 0;
     lines_corrected = 0;
     lines_coasted = 0;
     relocks = 0;
+}
+
+void LiveScan::request_finish()
+{
+    /* just publish; feed() (audio thread) performs it. fin_done first,
+     * so a caller polling it cannot see a stale "already done". */
+    fin_done.store(false);
+    fin_req.store(true);
 }
 
 void LiveScan::finish(void (*line_cb)(const uint8_t *, int, void *),
@@ -101,6 +112,14 @@ void LiveScan::feed(const uint8_t *data, size_t n,
         }
     }
     pump(line_cb, ud);
+
+    /* a flush posted by another thread runs here, on this one */
+    if (fin_req.exchange(false)) {
+        finishing = true;
+        pump(line_cb, ud);
+        finishing = false;
+        fin_done.store(true);
+    }
 }
 
 /* Lock acquisition (syncscan's find_lock, streaming version): first
