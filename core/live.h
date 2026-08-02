@@ -15,6 +15,9 @@
  * - "no edge near the predicted position" is only decidable once bytes
  *   past expected+search_win+max_pulse have arrived
  * - lock acquisition waits until the whole hysteresis chain is decidable
+ * - a completed line is held back until the NEXT line has arrived, because
+ *   sync_step_lock() confirms a step with one line of lookahead; finish()
+ *   releases the held line at end of stream
  * Buffers keep the whole stream (~0.5 MB/min of video) - fine for a
  * 19-minute reception; reset() between receptions to free it.
  */
@@ -62,6 +65,24 @@ struct LiveScan {
               void (*line_cb)(const uint8_t *line1500, int state, void *ud),
               void *ud);
 
+    /* End of stream. sync_step_lock() needs one line of lookahead, so a
+     * completed line is held back until the line after it has arrived;
+     * this emits the held line without that confirmation, which is what
+     * the batch scanner does when a file ends. Without it the last line
+     * of a reception never comes out. NOT thread-safe: call it on the
+     * thread that calls feed(). */
+    void finish(void (*line_cb)(const uint8_t *line1500, int state,
+                                void *ud), void *ud);
+
+    /* Thread-safe form of finish(), for a UI thread that cannot call it
+     * directly: request_finish() posts the request, the next feed() on
+     * the audio thread performs the flush with that feed's callback, and
+     * finish_done() reports when it has. The caller should wait briefly
+     * for finish_done() before it stops accepting lines, or the flushed
+     * line is emitted into a closed gate and lost anyway. */
+    void request_finish();
+    bool finish_done() const { return fin_done.load(); }
+
     /* stats (same meanings as FaxImage) */
     int lines_locked;
     int lines_corrected;
@@ -83,6 +104,9 @@ private:
      * [n*4000, (n+1)*4000), emitted rotated by phi; tracking only
      * adjusts phi, the grid never moves */
     long phi;            /* rotation offset within the line window */
+    int fb_dir, fb_run;  /* far-fallback run, for sync_slew (syncscan.h) */
+    bool finishing;      /* end of stream: emit without lookahead        */
+    bool manual_hold;    /* hand-placed phase outranks sync_step_lock    */
     bool ever_locked;    /* fallback search: full window until then */
     bool locked;         /* currently locked (release clears)       */
     long last_shape;     /* absolute pos of last shape-locked edge  */
@@ -97,6 +121,8 @@ private:
     bool track_applied;         /* last state acted on (audio thread) */
     std::atomic<long> man_delta;   /* pending manual align, samples   */
     std::atomic<bool> man_req;     /* manual align posted by UI thread */
+    std::atomic<bool> fin_req;     /* flush posted by the UI thread    */
+    std::atomic<bool> fin_done;    /* ... and performed by feed()      */
 
     void pump(void (*line_cb)(const uint8_t *, int, void *), void *ud);
     long try_lock(long grid);   /* >=0 edge / -1 wait / -2 no chain  */

@@ -106,6 +106,8 @@
 #include "../core/decoder.h"
 #include "../core/syncscan.h"
 #include "../core/live.h"
+
+#include <atomic>
 #include "../core/fft.h"
 #include "../core/settings.h"
 #include "../core/tonedetect.h"
@@ -892,7 +894,10 @@ static LiveAudio g_audio;
 static LiveState *g_live = 0;   /* owned by the UI thread; the audio
                                    thread only dereferences it inside
                                    callbacks, which stop() ends first */
-static bool g_recording = false;   /* Scan gate: lines -> image       */
+/* Scan gate: lines -> image. Written by the UI thread, read by the
+ * audio thread in on_live_line, so it is atomic - record_off() now
+ * depends on the audio thread seeing it in the right order. */
+static std::atomic<bool> g_recording{false};
 static int  g_last_live_led = -1;  /* LED dedup while not recording   */
 
 static void cb_live_line(void *p)
@@ -1095,8 +1100,22 @@ static void record_off(AppState *app)
 {
     if (!app->recording)
         return;
+    app->recording = false;   /* re-entrancy guard: set before waiting */
+
+    /* sync_step_lock holds the newest completed line back for one line
+     * of lookahead (core/live.h), so at this instant one line is still
+     * inside LiveScan. Ask the audio thread to flush it and give it a
+     * moment before closing the gate below, or the reception loses its
+     * last line. Fl::wait also drains the line queue, so the flushed
+     * line reaches the image on the way through. Bounded: if the audio
+     * thread is not running (device gone) this costs 200 ms and gives
+     * up. All callers of record_off are on the UI thread. */
+    if (g_live) {
+        g_live->scan.request_finish();
+        for (int i = 0; i < 40 && !g_live->scan.finish_done(); i++)
+            Fl::wait(0.005);
+    }
     g_recording = false;
-    app->recording = false;
     app->scan_btn->value(0);
     if (g_live) {
         app->image.lines_locked     = g_live->scan.lines_locked;

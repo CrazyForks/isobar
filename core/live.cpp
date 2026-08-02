@@ -9,7 +9,8 @@ const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 }
 
 LiveScan::LiveScan(const SyncParams &params)
-    : p(params), track(true), man_delta(0), man_req(false)
+    : p(params), track(true), man_delta(0), man_req(false),
+      fin_req(false), fin_done(false)
 {
     reset();
 }
@@ -22,6 +23,10 @@ void LiveScan::reset()
     edges.clear();
     run_start = -1;
     phi = 0;
+    fb_dir = 0;
+    fb_run = 0;
+    finishing = false;
+    manual_hold = false;
     ever_locked = false;
     locked = false;
     last_shape = -1;
@@ -32,10 +37,30 @@ void LiveScan::reset()
     lock_from = 0;
     track_applied = true;
     man_req.store(false);
+    fin_req.store(false);
+    fin_done.store(false);
     lines_locked = 0;
     lines_corrected = 0;
     lines_coasted = 0;
     relocks = 0;
+}
+
+void LiveScan::request_finish()
+{
+    /* just publish; feed() (audio thread) performs it. fin_done first,
+     * so a caller polling it cannot see a stale "already done". */
+    fin_done.store(false);
+    fin_req.store(true);
+}
+
+void LiveScan::finish(void (*line_cb)(const uint8_t *, int, void *),
+                      void *ud)
+{
+    /* End of stream: emit whatever pump() is holding back for lookahead.
+     * NOT thread-safe - call it on the same thread that calls feed(). */
+    finishing = true;
+    pump(line_cb, ud);
+    finishing = false;
 }
 
 void LiveScan::set_track(bool on)
@@ -87,6 +112,14 @@ void LiveScan::feed(const uint8_t *data, size_t n,
         }
     }
     pump(line_cb, ud);
+
+    /* a flush posted by another thread runs here, on this one */
+    if (fin_req.exchange(false)) {
+        finishing = true;
+        pump(line_cb, ud);
+        finishing = false;
+        fin_done.store(true);
+    }
 }
 
 /* Lock acquisition (syncscan's find_lock, streaming version): first
@@ -274,6 +307,14 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
             man_req.store(false);
             long d = man_delta.load() % LINE_SAMPLES;
             phi = (phi + d + LINE_SAMPLES) % LINE_SAMPLES;
+            fb_dir = 0;
+            fb_run = 0;
+            /* The user has asserted where the sync is. sync_step_lock
+             * searches the WHOLE line and would walk straight off to the
+             * strongest sync-looking pulse - which is exactly what this
+             * feature exists to override (cli/manual-sync-test.cpp). Hold
+             * it off until the decoder earns a shape lock of its own. */
+            manual_hold = true;
             track_applied = true;
             locked = true;
             ever_locked = true;
@@ -317,6 +358,9 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     return;      /* undecidable yet: wait */
                 if (E >= 0) {
                     phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    fb_dir = 0;
+                    fb_run = 0;
+                    manual_hold = false;
                     last_shape = E;
                     if (ever_locked)
                         relocks++;
@@ -345,6 +389,9 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                        fb_dir = 0;
+                        fb_run = 0;
+                        manual_hold = false;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -363,6 +410,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 /* fallback: full window until first lock, narrow
                  * window after (docs/01 sec. 3.2(8)) */
                 long fb = -1;
+                bool snapped = false;
                 long flo = grid, fhi = grid + LINE_SAMPLES - 1;
                 bool have = true;
                 if (ever_locked) {
@@ -372,8 +420,21 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     } else {
                         have = false;
                     }
+                    /* Whole-line step first - mirrors syncscan exactly.
+                     * It needs the NEXT line too (one line of lookahead,
+                     * syncscan.h), so hold this line back until that data
+                     * has arrived. finish() drops the wait so the last
+                     * line of a stream still comes out, exactly as the
+                     * batch scanner skips the check when the file ends. */
+                    if (!manual_hold) {
+                        if (!finishing &&
+                            (long)buf.size() < grid + 2 * LINE_SAMPLES)
+                            return;
+                        fb = sync_step_lock(sm, grid, phi, p);
+                        snapped = fb >= 0;
+                    }
                 }
-                if (have) {
+                if (fb < 0 && have) {
                     /* ported tracker first, our dip-depth search as the
                      * second chance - mirrors syncscan exactly */
                     fb = fallback_edge(flo, fhi, expected);
@@ -381,7 +442,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         fb = fallback(flo, fhi);
                 }
                 if (fb >= 0) {
-                    phi = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    if (snapped) {
+                        phi = tgt;
+                        since_shape = 0;
+                    } else {
+                        phi = sync_slew(phi, tgt, p, fb_dir, fb_run);
+                    }
                     how = 1;
                     miss = 0;
                 } else {

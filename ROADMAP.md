@@ -194,18 +194,57 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   personal folder, like AGENTS.md). The DMCA-risk rationale is satisfied as
   far as it can be: he was written to at his own published address, twice,
   by independent routes. **This item is closed — do not reopen it.**
-- 🔶 Compiler warnings on the non-Mac toolchains — **open, pre-existing, all
-  cosmetic-or-small; the Mac/clang build is at 0 and must stay there.** CI is
-  green everywhere (nothing is `-Werror`), but two toolchains emit warnings the
-  dev machine cannot see: **MSVC** 6× C4996 (`fopen` in `core/synfile.cpp` ×2,
+- ✅ Compiler warnings on the non-Mac toolchains — **all fixed in v1.3.0
+  (S25) and verified on CI: 0 warnings on all five runners**, re-confirmed
+  2026-08-02 on run 30769561399. Two of them were more than cosmetic: the
+  gcc `-Wformat-truncation` was a genuine truncation in `set_title()` (now
+  built on `std::string`), and `-Wmaybe-uninitialized` was real —
+  `syn_read()` never set `FaxImage::lines_corrected`. What they were: **MSVC** 6× C4996 (`fopen` in `core/synfile.cpp` ×2,
   `core/bmpfile.cpp`, `gui/main.cpp`, `cli/kgfax-decode.cpp`; `localtime` in
   `gui/main.cpp`) plus 1× C4244 `double`→`float` in `gui/progressdialog.cpp`;
   **gcc** `-Wformat-truncation` in `gui/main.cpp` (a `%s` that can write 159
   bytes into 151 — the one worth actually reading, not just silencing) and
   `-Wmaybe-uninitialized` on `rot` in `core/syncscan.h`. Fix pattern for the
-  C4996s is settled: `std::ofstream`/`ifstream`, as `core/settings.cpp` and the
-  S23 test writers already do; `localtime` needs a small portable wrapper.
-  Must be verified by a CI branch run, not locally.
+  The C4996s became `std::ofstream`/`ifstream`, as `core/settings.cpp`
+  already did, and `localtime` got a portable `local_time()` wrapper
+  (`localtime_s` on MSVC, `localtime_r` elsewhere) — which also removed a
+  real thread-safety wart. Verified by CI branch runs, not locally, because
+  the dev machine cannot see any of them.
+- 🔶 Adapt the lock chain to a gappy source (networked SDRs) — **open,
+  measured 2026-08-02, no code written.** Lock acquisition needs a chain of
+  `LockAfter` (RReSycn, default **5**) consecutive valid line periods, i.e.
+  **2.5 s of undisturbed audio**, and an audio dropout breaks the chain.
+  That, not anything in the sync tracker, is what sets the decoder's
+  tolerance for a KiwiSDR or other internet-fed source. Measured by
+  injecting dropouts into `jmh-offair-12k.wav` (120 lines, 113 locked,
+  0 damaged clean):
+
+  | one 120 ms drop every | locked | damaged lines |
+  |---|---|---|
+  | 5 s | 99 | 0 |
+  | 3 s | 91 | 6 (5.2%) |
+  | **2 s** | **0** | **96 (85%)** |
+  | 1 s | 0 | 102 (95%) |
+
+  Dropout *size* is almost irrelevant — a **10-second outage costs 0
+  damaged lines** (you lose 20 lines of chart and nothing else), because
+  `sync_step_lock` follows any phase step within a line. Only the *rate*
+  matters, and the cliff between 3 s and 2 s is exactly the 5-chain:
+  lowering `LockAfter` to 3 turns the every-2 s case from 0 locked / 85%
+  damaged into 78 locked / 5.3% damaged, and `LockAfter` 1 rescues the
+  every-1 s case (49 locked / 8.4%). **Lowering it costs nothing on clean
+  audio** — 5, 3 and 2 all give 113 locked / 0 damaged.
+
+  So today the answer is manual: lower `LockAfter` in the Details dialog
+  (already a 1..200 spinner) when listening to a networked SDR. The
+  hysteresis exists to stop false locks on *noisy HF*; a KiwiSDR feed is
+  the opposite regime — clean but gappy — and can afford a short chain.
+  **The future work**: notice that the chain keeps breaking and shorten it
+  automatically, rather than making the user know this. Care needed so it
+  cannot loosen itself on a genuinely noisy HF signal, which is where the
+  hysteresis earns its keep — the signal to key off is "periods keep
+  starting and then being interrupted", not "no lock".
+
 - 🔶 Packaging & cross-platform CI — **5-phase arc all ✅ done + GREEN on
   GitHub (Sessions 11–15)**. Repo is live at github.com/skgsara/isobar;
   `build.yml` passes on all five runners — macos-latest / macos-15-intel /
@@ -226,7 +265,11 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      back-to-back HIMAWARI IR charts): the only sample containing a full
      transmission preamble — ~33 s of all-dark phasing lines between two
      pictures — which is what exposed the phase-runaway bug fixed in S25
-     (`phasing-test`). Stale `make`/`Makefile` refs fixed
+     (`phasing-test`). **S26 added a fourth**, `jmh-slew-12k.wav` (1.4 MB,
+     a second 60 s cut of the same 12 kHz off-air recording, 50..110 s):
+     the stretch where that recording's sync position genuinely steps
+     −162 samples, which is what a networked SDR's clock-slip correction
+     leaves behind (`slew-test`). Stale `make`/`Makefile` refs fixed
      across all docs;
      root `README.md` written (GitHub landing page).
   1. ✅ **CMake migration** (S11) — `CMakeLists.txt` replaces the Makefile;

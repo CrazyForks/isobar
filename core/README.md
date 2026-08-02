@@ -34,9 +34,37 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   our older min-brightness search validated by a dip depth below the
   local mean. The ported one is the more selective of the two but fires
   less often, and the pair together beat either alone on every fixture.
+  Two rules keep the sync strip solid, both in `syncscan.h` and shared
+  with `live.cpp` so the batch and live paths cannot drift apart. The
+  strip is rotated to index 0 — the seam where a line wraps — so a phase
+  error does not shift a line, it **splits** the strip across both ends,
+  which is what makes such lines unreadable (`slew-test`).
+  `sync_step_lock()` handles a **genuine step** in the sync position:
+  real transmissions jump further than any narrow search reaches — the
+  off-air recording steps −162 samples ten times mid-picture (a networked
+  SDR's clock-slip correction), and `jmh sample.wav` does it at line 930
+  where a new transmission starts. It takes the darkest `syn` window in
+  the whole line, but only when that pulse is unambiguous — nearest rival
+  at least 300 samples away and `DarkThreshold`/2 brighter, and the dark
+  run it sits in is a plausible sync-pulse width (the same 100..400
+  samples `find_sync_edges` requires, which is what keeps a chart's wide
+  black margin out) — and only when the **next** line agrees with it. That one line of **lookahead** is
+  what makes a whole-line search safe here, where a bare one re-locks onto
+  picture content (`phasing-test`), and confirming forwards rather than
+  backwards is what lets the step be followed on the very line it starts
+  on — the line whose strip would otherwise be split. `sync_slew()` handles everything
+  else: a move within `MaxJump` is taken whole, anything further is
+  rate-limited to `MaxJump`/4 samples, doubling for each consecutive line
+  agreeing on the direction. The original rejects a far fallback result
+  outright and we cannot, because that loses the real steps
+  (`DEVIATIONS.md` #16).
   `ReleaseAfter` invalid lines → drop the lock, `LockAfter` valid lines →
   declare it, re-acquiring via a junk-tolerant period chain
-  (spec 3.2(7)(8)(10)). 4000 samples → 1500 px via `line[8*i/3]`.
+  (spec 3.2(7)(8)(10)). NOTE `LockAfter` is what limits tolerance of a
+  *gappy* source: the chain needs `LockAfter` consecutive valid periods,
+  so an audio dropout more often than every ~3 s stops the decoder locking
+  at all. Lowering it to 1–3 fixes that and costs nothing on clean audio —
+  measured, `ROADMAP.md` M6. 4000 samples → 1500 px via `line[8*i/3]`.
   Re-acquisition after a release is confined to the neighbourhood of the
   phase already held — a transmission's sync position does not move, only
   its quality does — and widens back to the whole line only after
@@ -91,7 +119,18 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   sync align (docs/01 §3.2): the UI thread posts a phase shift in
   samples, `pump()` applies it at the next line boundary and keeps the
   lock so the search stays centred on the position the user gave
-  (`ctest --test-dir build -R manual-sync-test`).
+  (`ctest --test-dir build -R manual-sync-test`). A hand-placed position
+  also suppresses `sync_step_lock` until the decoder earns a shape lock of
+  its own: a whole-line search would walk straight off to the strongest
+  sync-looking pulse, which is the very thing the manual position exists
+  to override. `finish()` releases the
+  line `sync_step_lock`'s lookahead is holding back; call it on the feed
+  thread when the stream ends, or the last line never comes out.
+  `request_finish()`/`finish_done()` are the same thing for a UI thread
+  that cannot call it directly — the request is posted and the next
+  `feed()` performs it on the audio thread, which is how the GUI's
+  Scan-off keeps a reception's last line. Both paths are checked against
+  the batch decode (`live-test`).
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
 
