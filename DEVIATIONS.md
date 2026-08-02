@@ -35,16 +35,34 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     what sent that reading astray. On the S25 fixture, read literally with
     no inversion, 64 of 66 phasing lines validate at a threshold of 96+ and
     0 validate inverted at any threshold.
-    **Why we still do not switch**: the original's numbers still do not
-    transfer to our formulas — its `Sync2Thre` of 20 is defeated by small
-    bright blips in our video's noise floor, where our `dark_th` of 96 is
-    exactly what makes its own check work. And its detector spends a normal
-    chart entirely in the fallback (0/1851 lines shape-validated on an
-    off-air picture recording), where ours locks directly: 1713/1851 lines
-    locked with 0 coasted, against 122 locked and 1550 coasted when fed the
-    original's two values. The other ten ini defaults are adopted exactly.
-    Porting the original's fallback tracker remains a future exercise; it
-    is now fully and correctly specified in docs/01 §3.2(8).
+    **`Sync2Thre` stays ours** (`dark_th` = 96, not 20): the original's 20
+    is defeated by small bright blips in our video's noise floor, and 96 is
+    exactly what makes the original's *own* check validate 64 of 66 phasing
+    lines. Its shape check also spends a normal chart entirely in the
+    fallback (0/1851 lines shape-validated on an off-air picture recording)
+    where ours locks directly — 1713/1851 locked with 0 coasted, against 122
+    locked and 1550 coasted when fed the original's two values.
+    **`SyncThre` is now adopted, at the original's value.** S25 ported the
+    original's fallback tracker (`fallback_edge` in `core/syncscan.cpp` and
+    its twin in `core/live.cpp`), which computes the same quantity the
+    original does — a boxcar mean over the binarised video — so its number
+    transfers where the old dip-depth formula's could not. It lives in
+    `SyncParams::fb_mean` at **30 = `SyncThre`**, independently measured as
+    the best value on all three fixtures. Our dip-depth `fb_thresh` (10)
+    survives as a **second chance**, tried only when the ported test
+    declines: the ported test alone is more selective but less available,
+    and on its own it coasts through 45 picture lines of
+    `jmh-phasing-16k.wav` that the dip-depth search corrects. One deliberate
+    departure in the port — the original gates on the samples *after* the
+    boxcar and so anchors the dark→bright edge, while its own shape check
+    anchors the bright pulse, two reference points a whole `syn` window
+    apart that its jump guard then rejects. We gate on the samples *before*
+    the window, anchoring the bright→dark edge, which is the reference our
+    shape check already publishes: same mechanism, one consistent reference
+    (docs/01 §3.2(8)).
+    The ini's `FallbackDepth` still drives the dip-depth second chance;
+    pointing it at `fb_mean` instead is a possible follow-up.
+    The other ten ini defaults are adopted exactly.
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is

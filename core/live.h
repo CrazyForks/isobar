@@ -101,6 +101,7 @@ private:
     void pump(void (*line_cb)(const uint8_t *, int, void *), void *ud);
     long try_lock(long grid);   /* >=0 edge / -1 wait / -2 no chain  */
     long fallback(long lo, long hi) const;
+    long fallback_edge(long lo, long hi, long prev) const;
     void emit(void (*line_cb)(const uint8_t *, int, void *), void *ud,
               long grid, int how);
 };

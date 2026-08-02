@@ -22,6 +22,14 @@ rewrite to the original's fixed 4000-sample grid cadence).
 - ✅ Sync fallback: min-brightness search + lock/release hysteresis
   (`ctest -R fallback-test`; regenerated reference out.pgm — fallback-region
   lines now land on corrected positions)
+- ✅ Original's fallback tracker ported (S25) — boxcar minimum-mean over the
+  binarised video, gated on a bright→dark edge, absolute `SyncThre` bound
+  (`fb_mean` = 30, the original's own value, which transfers now that the
+  formula matches) and the `MaxJump` guard. Our dip-depth search stays as a
+  second chance when it declines. Mis-phased picture lines across the three
+  fixtures: jmh 74→73, phasing fixture 56→28 (the 28 are all preamble and
+  stop tone — zero picture damage), off-air 10→**0** with lock ratio
+  78.3%→94.2% and relocks 1→0. See DEVIATIONS #16
 - ✅ Phase runaway fixed (S25): re-acquisition after a release could pick a
   sync edge from an earlier line (negative rotation offset) or, anywhere in
   the 4000-sample line, a dark feature in the picture — shifting the image

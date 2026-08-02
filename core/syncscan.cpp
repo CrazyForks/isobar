@@ -24,7 +24,17 @@ const int DEF_FALLBACK_WIN = 160;   /* syn combo default: 20 ms @ 8 kHz */
  * an absolute bound on a boxcar mean. Its values in our formulas cost
  * 1550 of 1851 lines on an off-air recording - measured, see docs/01. */
 const int DEF_DARK_TH     = 96;     /* cf. Sync2Thre */
-const int DEF_FB_THRESH   = 10;     /* cf. SyncThre  */
+const int DEF_FB_THRESH   = 10;     /* ours: dip depth, second chance */
+/* The original's SyncThre, and it takes the original's value: the ported
+ * fallback below computes the same quantity the original does (a boxcar
+ * mean over the binarised video), so unlike the two above, this number
+ * transfers. Measured best on all three fixtures at exactly 30. */
+const int DEF_FB_MEAN     = 30;     /* = SyncThre */
+
+/* Ported fallback shape constants, compiled into the original with no
+ * ini key (docs/01 sec. 3.2(8); kgfax.exe.c:5639-5640). */
+const int FB_GATE       = 8;        /* dword_4F25E4 */
+const int FB_GATE_LEVEL = 128;      /* dword_4F25E8 */
 
 const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 
@@ -124,6 +134,60 @@ long fallback_search(const std::vector<int> &sm, long lo, long hi,
     return -1;
 }
 
+/* The original's fallback tracker, docs/01 sec. 3.2(8), in OUR reference
+ * convention. It slides a boxcar of fallback_win samples over the
+ * binarised video and keeps the position with the minimum mean, but only
+ * where the samples just outside the window are bright - i.e. the window
+ * is a dark run with a bright edge, not merely a dark patch. Valid when
+ * that minimum mean is below fb_mean, an absolute bound (SyncThre), and
+ * when the move from the previous position is within search_win
+ * (MaxJump) or is a wrap-around the long way.
+ *
+ * One deliberate departure: the original gates on the samples AFTER the
+ * window and publishes the window's start, so its fallback anchors the
+ * dark->bright edge while its own shape check anchors the bright pulse -
+ * two reference points a whole fallback_win apart, which its own jump
+ * guard then rejects (docs/01 sec. 3.2(8) "pick one reference point").
+ * We gate on the samples BEFORE the window and publish its start, so the
+ * anchor is the bright->dark edge - the same one our shape check
+ * publishes. Same mechanism, one consistent reference. */
+long fallback_edge(const std::vector<int> &sm, long lo, long hi,
+                   const SyncParams &p, long prev, bool ever_locked)
+{
+    long n = (long)sm.size();
+    int win = p.fallback_win > 0 ? p.fallback_win : 160;
+    if (lo < FB_GATE) lo = FB_GATE;
+    if (hi > n - win) hi = n - win;
+    if (lo > hi)
+        return -1;
+
+    long best = -1;
+    int best_mean = 256;
+    for (long q = lo; q <= hi; q++) {
+        int gate = 0;
+        for (int i = 1; i <= FB_GATE; i++)
+            gate += sm[q - i] >= p.dark_th ? 255 : 0;
+        if (gate / FB_GATE <= FB_GATE_LEVEL)
+            continue;            /* no bright->dark edge here */
+        int mean = 0;
+        for (int i = 0; i < win; i++)
+            mean += sm[q + i] >= p.dark_th ? 255 : 0;
+        mean /= win;
+        if (mean < best_mean) {
+            best_mean = mean;
+            best = q;
+        }
+    }
+    if (best < 0 || best_mean >= p.fb_mean)
+        return -1;
+    if (ever_locked) {
+        long d = best - prev < 0 ? prev - best : best - prev;
+        if (d > p.search_win && d < LINE_SAMPLES - p.search_win)
+            return -1;           /* jumped further than MaxJump */
+    }
+    return best;
+}
+
 } /* namespace */
 
 SyncParams sync_default_params()
@@ -139,6 +203,7 @@ SyncParams sync_default_params()
     p.lock_hyst    = DEF_LOCK_HYST;
     p.fallback_win = DEF_FALLBACK_WIN;
     p.fb_thresh    = DEF_FB_THRESH;
+    p.fb_mean      = DEF_FB_MEAN;
     return p;
 }
 
@@ -283,7 +348,18 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     lo = grid;
                     hi = grid + LINE_SAMPLES - 1;
                 }
-                long fb = lo <= hi ? fallback_search(sm, lo, hi, p) : -1;
+                /* The ported tracker first: it is the more selective of
+                 * the two, and where it fires it is right. Where it
+                 * declines, our own dip-depth search is a second chance
+                 * - better than coasting, measured on all three
+                 * fixtures (the ported test alone coasts through 45
+                 * picture lines of jmh-phasing-16k that ours corrects). */
+                long fb = -1;
+                if (lo <= hi) {
+                    fb = fallback_edge(sm, lo, hi, p, expected, ever_locked);
+                    if (fb < 0)
+                        fb = fallback_search(sm, lo, hi, p);
+                }
                 if (fb >= 0) {
                     phi = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     how = 1;

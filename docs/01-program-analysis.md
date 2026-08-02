@@ -204,6 +204,16 @@ Runs once per 2205-sample (100 ms) block:
      cannot immediately follow a shape lock: the decoder coasts instead.
      Whether that is intentional or a bug in the original is not settled;
      a port should pick **one** reference point and stay on it.
+   - **Ported 2026-08-02 (S25)** as `fallback_edge()` in `core/syncscan.cpp`
+     with a streaming twin in `core/live.cpp`. It gates on the `FB_GATE`
+     samples **before** the window instead of after, so the anchor is the
+     bright→dark edge — the reference our own shape check already publishes
+     — resolving the original's disagreement between its two paths in favour
+     of one consistent point. `SyncThre` is adopted at its real value
+     (`SyncParams::fb_mean` = 30) because the formula now matches; the jump
+     guard is ported as-is. Our older dip-depth search is kept as a second
+     chance when the ported test declines, which measurably beats coasting.
+     See `DEVIATIONS.md` #16 for the numbers.
 
    Hysteresis, from the counters at `dword_4ED884`/`dword_4ED888`:
    - **`RReSycn`** — consecutive *valid* lines before the decoder declares

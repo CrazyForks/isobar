@@ -171,6 +171,46 @@ long LiveScan::try_lock(long grid)
 
 /* min-brightness fallback search over [lo, hi] (same validation as
  * syncscan) */
+/* The original's fallback tracker; see syncscan.cpp's fallback_edge, of
+ * which this is the streaming twin (the two must stay byte-identical -
+ * live-test). Constants are the original's compiled-in ones. */
+long LiveScan::fallback_edge(long lo, long hi, long prev) const
+{
+    const int GATE = 8, GATE_LEVEL = 128;
+    long n = (long)sm.size();
+    int win = p.fallback_win > 0 ? p.fallback_win : 160;
+    if (lo < GATE) lo = GATE;
+    if (hi > n - win) hi = n - win;
+    if (lo > hi)
+        return -1;
+
+    long best = -1;
+    int best_mean = 256;
+    for (long q = lo; q <= hi; q++) {
+        int gate = 0;
+        for (int i = 1; i <= GATE; i++)
+            gate += sm[q - i] >= p.dark_th ? 255 : 0;
+        if (gate / GATE <= GATE_LEVEL)
+            continue;
+        int mean = 0;
+        for (int i = 0; i < win; i++)
+            mean += sm[q + i] >= p.dark_th ? 255 : 0;
+        mean /= win;
+        if (mean < best_mean) {
+            best_mean = mean;
+            best = q;
+        }
+    }
+    if (best < 0 || best_mean >= p.fb_mean)
+        return -1;
+    if (ever_locked) {
+        long d = best - prev < 0 ? prev - best : best - prev;
+        if (d > p.search_win && d < LINE_SAMPLES - p.search_win)
+            return -1;
+    }
+    return best;
+}
+
 long LiveScan::fallback(long lo, long hi) const
 {
     if (lo < 0) lo = 0;
@@ -323,12 +363,22 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 /* fallback: full window until first lock, narrow
                  * window after (docs/01 sec. 3.2(8)) */
                 long fb = -1;
+                long flo = grid, fhi = grid + LINE_SAMPLES - 1;
+                bool have = true;
                 if (ever_locked) {
-                    if (p.fallback_win > 0)
-                        fb = fallback(expected - p.fallback_win / 2,
-                                      expected + p.fallback_win / 2);
-                } else {
-                    fb = fallback(grid, grid + LINE_SAMPLES - 1);
+                    if (p.fallback_win > 0) {
+                        flo = expected - p.fallback_win / 2;
+                        fhi = expected + p.fallback_win / 2;
+                    } else {
+                        have = false;
+                    }
+                }
+                if (have) {
+                    /* ported tracker first, our dip-depth search as the
+                     * second chance - mirrors syncscan exactly */
+                    fb = fallback_edge(flo, fhi, expected);
+                    if (fb < 0)
+                        fb = fallback(flo, fhi);
                 }
                 if (fb >= 0) {
                     phi = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;

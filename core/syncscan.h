@@ -68,8 +68,13 @@ struct SyncParams {
     int fallback_win; /*  160 samples: min-brightness search width
                         (syn combo default 20 ms); 0 disables fallback */
     int fb_thresh;    /*   10: min dip depth below window mean for a
-                        valid fallback edge (cf. SyncThre, which is an
-                        absolute bound in the original - DEVIATIONS #16) */
+                        valid fallback edge - our own second-chance
+                        search, tried only when the ported one below
+                        declines (cf. SyncThre; DEVIATIONS #16)       */
+    int fb_mean;      /*   30: the original's SyncThre, in its own
+                        units at last - max boxcar mean (0..255 over
+                        the binarised video) for a valid edge on the
+                        ported fallback (docs/01 sec. 3.2(8))         */
 };
 
 SyncParams sync_default_params();
