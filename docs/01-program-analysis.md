@@ -133,25 +133,78 @@ Runs once per 2205-sample (100 ms) block:
      line invalid.
    - `valid = 3980 < v173+v174 < 4020 && 100 < v173 < 400`, i.e. the period
      is one line and the `>= 0x80` total is a plausible sync pulse.
-   - **Polarity**: the 100..400-sample run is the one *above* the threshold,
-     so in the original's video the sync pulse is the HIGH-value run — its
-     video is inverted relative to ours, where 0 is black. Confirmed by
-     running this exact check over our video both ways: the literal reading
-     validates 0 of 60 lines at every threshold, the inverted sense 55 of 60.
-   - **Consequence**: the check structurally requires *exactly one* dark run
-     per line. Measured on our decoder's video, a clean test-chart signal
-     gives 55/60 such lines, but a real off-air chart gives **0 of 1851**
-     (median ~30 dark runs per line, from chart ink and noise). The original
-     therefore falls through to step 8 on essentially every line of a real
-     chart; the shape check is a fast path for clean signals, not the main
-     tracker.
-8. **Fallback sync tracking** (the path that does the real work). On the same
-   binarised buffer, slide a boxcar of `dword_4ED894` samples (the `syn` combo
-   window) over `[prevSync − SyncWidth, prevSync + dword_4ED894)` — note the
-   **asymmetry**, `SyncWidth` to the left and the combo window to the right —
-   and keep the position with the **minimum mean**. The candidate is valid when
-   that minimum mean is **below `SyncThre`**: an absolute bound on a boxcar
-   mean, *not* a dip depth relative to a local average.
+   - **Polarity — corrected 2026-08-02 (S25).** An earlier reading of this
+     section (S23) concluded the original's video must be inverted relative
+     to ours, because the literal check validated 0 of 60 lines of our clean
+     sample and the inverted sense 55 of 60. **That conclusion was wrong.**
+     Both programs demodulate to the same polarity: §3.2(3)'s reference
+     subtract and ×1102.25 scale put 1500 Hz (black) at 0 and 2300 Hz (white)
+     at ≈251, and the port does the same. No inversion anywhere.
+   - **What the check actually is: a phasing-signal detector.** `v173` is the
+     total sample count *above* the threshold and `v174` the one dark run
+     between the two bright runs, and `v173 + v174 ≈ 4000` — so a valid line
+     is one that is **almost entirely dark with a single bright pulse of
+     100..400 samples**. That is not a picture line at all; it is a WEFAX
+     **phasing line**, the black-with-a-white-pulse preamble broadcast at the
+     start of every transmission. Neither fixture available in S23 contained
+     a preamble, which is why the earlier reading went looking for an
+     inversion to explain the mismatch.
+   - **Measured on the S25 fixture** (`jmh-phasing-16k.wav`, the first
+     recording with a real preamble), read **literally, no inversion**: of
+     its 66 phasing lines, **64 validate** at a threshold of 96 or above,
+     and **0** validate under the inverted reading at any threshold. Picture
+     lines validate under neither, as expected. The threshold matters: at the
+     original's `Sync2Thre` of 20 our video's noise floor leaves small bright
+     blips, and *any* stray bright run defeats the scan (it counts one bright
+     run, one dark run and at most one more bright run, so a blip before the
+     real pulse measures the wrong pair and the total comes to a few hundred
+     instead of ~4000). Our `dark_th` default of 96 is what makes it work.
+   - **Consequence**: the shape check fires during the preamble and
+     essentially never during picture, so the original spends a normal chart
+     entirely in step 8. This matches the S23 measurement of 0/1851 lines on
+     an off-air picture recording — that recording simply had no preamble.
+   - **Reference point**: the position it publishes (`v175`) is the **start
+     of the bright pulse**. Note step 8 publishes a *different* reference —
+     see below.
+8. **Fallback sync tracking** (the path that does the real work). Runs only
+   when the shape check failed (`!byte_4F25D8`), on the same binarised
+   buffer. **Re-read in full 2026-08-02 (S25); the S23 description below was
+   missing three things, all of which matter to a port.**
+
+   Candidate positions `p` are scanned over
+   `[prevSync − SyncWidth, prevSync + dword_4ED894)` — note the
+   **asymmetry**, `SyncWidth` to the left and the `syn` combo window to the
+   right — or over the whole line `0..3999` before the ever-locked flag
+   (`byte_4ED890`) is set. For each `p`:
+
+   - `m1` = mean of the binarised signal over `[p, p + dword_4ED894)`
+     — the combo window. Minimised.
+   - **`m2` = mean over the `dword_4F25E4` = 8 samples immediately after
+     that window**, i.e. `[p + dword_4ED894, p + dword_4ED894 + 8)`, which
+     **must exceed `dword_4F25E8` = 128** for `p` to be considered at all.
+
+   So it is **not** a plain minimum-mean search: it looks for a dark window
+   whose right edge is immediately followed by mostly-bright samples — a
+   dark→bright transition. Both constants are compiled in (set at
+   `kgfax.exe.c:5639-5640`), with no ini key.
+
+   - **Validity**: `SyncThre > m1` — an absolute bound on a boxcar mean,
+     *not* a dip depth relative to a local average.
+   - **Jump guard** (undocumented until S25): once ever-locked, a result is
+     rejected outright when `|p − prevSync| > SyncWidth`, *unless*
+     `|p − prevSync| >= 4000 − SyncWidth` (a wrap-around, i.e. a small move
+     the other way round the line). This is the real meaning of `SyncWidth`
+     as a maximum per-line jump, and the original applies it as a
+     **validity** test on the fallback, not merely as a search bound.
+   - **Reference point**: the published position is `p`, the **start of the
+     dark window** — whose end is where bright begins. Step 7 instead
+     publishes the **start of the bright pulse**. The two therefore differ
+     by about `dword_4ED894` (160 by default), and because the jump guard
+     rejects anything more than `SyncWidth` (20) away, a fallback result
+     cannot immediately follow a shape lock: the decoder coasts instead.
+     Whether that is intentional or a bug in the original is not settled;
+     a port should pick **one** reference point and stay on it.
+
    Hysteresis, from the counters at `dword_4ED884`/`dword_4ED888`:
    - **`RReSycn`** — consecutive *valid* lines before the decoder declares
      itself locked (sets the ever-locked flag at `+1012`).

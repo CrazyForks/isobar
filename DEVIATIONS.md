@@ -12,28 +12,39 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
    the DSP math identical but move it off the UI thread.
 16. **Sync detection is our own algorithm, so `Sync2Thre` and `SyncThre`
     keep our defaults (96 and 10, not the original's 20 and 30).**
-    Traced 2026-08-01 (docs/01 §3.2(7)(8)). The original binarises the
-    **raw** video at `Sync2Thre` and requires each line to contain
-    *exactly one* dark run: it scans one ON run, one OFF run and at most
-    one more ON run, then checks the period is ~4000 and the ON total is
-    100..400 samples. Its fallback slides a boxcar over the binarised
-    signal and accepts the minimum **mean** if that mean is below
-    `SyncThre` — an absolute bound, not a dip depth.
+    Traced 2026-08-01, **re-traced and partly corrected 2026-08-02**
+    (docs/01 §3.2(7)(8)). The original binarises the **raw** video at
+    `Sync2Thre` and scans one bright run, one dark run and at most one more
+    bright run, then checks the period is ~4000 and the **bright** total is
+    100..400 samples. Its fallback minimises a boxcar mean over the `syn`
+    window, subject to the 8 samples after that window averaging above 128,
+    and accepts the result if the mean is below `SyncThre` — an absolute
+    bound, not a dip depth — and if it lies within `SyncWidth` of the
+    previous position.
     Ours instead thresholds an 8-sample moving average, collects *all*
-    candidate edges and chain-matches them across lines, and validates the
-    fallback on dip depth below the local mean.
-    **Why we did not switch**: measured against our decoder's video, the
-    original's single-dark-run requirement is satisfied by 55 of 60 lines
-    of a clean test-chart signal but **0 of 1851** lines of a real off-air
-    JMH recording (median ~30 dark runs per line, from chart ink and
-    noise). The original copes because it falls through to its fallback on
-    nearly every real line; our detector locks directly instead, and gives
-    1713/1851 lines locked with 0 coasted where feeding it the original's
-    two values gives 122 locked and 1550 coasted.
-    Both quantities therefore mean something different here, and the
-    original's numbers do not transfer. The other ten ini defaults are
-    adopted exactly. Porting the original's fallback tracker is a possible
-    future exercise; it is fully specified in docs/01 §3.2(8).
+    candidate edges and chain-matches them across lines, validates the
+    fallback on dip depth below the local mean, and has no trailing-bright
+    test.
+    **Two S23 claims here were wrong and are withdrawn**: that the
+    original's video is inverted relative to ours (it is not — both put
+    1500 Hz at 0 and 2300 Hz at ≈251), and that its shape check is a
+    general sync detector. It is a **phasing-preamble detector**: a valid
+    line is almost entirely dark with one bright pulse of 100..400 samples,
+    which describes the black-with-white-pulse preamble, not a picture
+    line. Neither fixture available in S23 contained a preamble, which is
+    what sent that reading astray. On the S25 fixture, read literally with
+    no inversion, 64 of 66 phasing lines validate at a threshold of 96+ and
+    0 validate inverted at any threshold.
+    **Why we still do not switch**: the original's numbers still do not
+    transfer to our formulas — its `Sync2Thre` of 20 is defeated by small
+    bright blips in our video's noise floor, where our `dark_th` of 96 is
+    exactly what makes its own check work. And its detector spends a normal
+    chart entirely in the fallback (0/1851 lines shape-validated on an
+    off-air picture recording), where ours locks directly: 1713/1851 lines
+    locked with 0 coasted, against 122 locked and 1550 coasted when fed the
+    original's two values. The other ten ini defaults are adopted exactly.
+    Porting the original's fallback tracker remains a future exercise; it
+    is now fully and correctly specified in docs/01 §3.2(8).
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is
