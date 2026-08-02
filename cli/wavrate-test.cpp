@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -64,12 +65,13 @@ static bool write_tone(const std::string &path, uint32_t rate, double freq,
         int16_t s = (int16_t)(20000.0 * std::sin(2.0 * PI * freq * t));
         put_u16(d, (uint16_t)s);
     }
-    FILE *f = fopen(path.c_str(), "wb");
+    /* ofstream, not fopen: MSVC flags fopen as C4996 and the build must
+     * stay warning-free on all five CI runners. */
+    std::ofstream f(path.c_str(), std::ios::out | std::ios::binary);
     if (!f)
         return false;
-    size_t n = fwrite(d.data(), 1, d.size(), f);
-    fclose(f);
-    return n == d.size();
+    f.write((const char *)d.data(), (std::streamsize)d.size());
+    return (bool)f;
 }
 
 /* Dominant frequency by zero-crossing count - enough to prove the tone

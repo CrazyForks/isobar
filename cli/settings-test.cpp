@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 static int fail(const char *field)
@@ -128,13 +129,16 @@ int main()
          * scales. Every tuning value here differs from our defaults, so a
          * leak is visible; read under today's mapping they would mean a
          * 60-line lock chain and a 10-second tone hold. */
-        FILE *lf = fopen(legacy.c_str(), "w");
-        if (!lf) return fail("cannot write legacy fixture");
-        fputs("[Dir]\nDirName=C:\\fax\n[Sync]\nSync2Thre=100\nLReSycn=5\n"
-              "RReSycn=60\nSyncThre=50\nSyncWidth=5\n[Det]\nDetTime=100\n"
-              "[Set]\nrpm=1\nsyn=2\nCycleGet=0\n[Wave]\nWaveDev=4\n"
-              "[Form]\nFormX=300\nFormY=200\n", lf);
-        fclose(lf);
+        /* ofstream, not fopen: MSVC flags fopen as C4996 and the build
+         * must stay warning-free on all five CI runners. */
+        {
+            std::ofstream lf(legacy.c_str());
+            if (!lf) return fail("cannot write legacy fixture");
+            lf << "[Dir]\nDirName=C:\\fax\n[Sync]\nSync2Thre=100\nLReSycn=5\n"
+                  "RReSycn=60\nSyncThre=50\nSyncWidth=5\n[Det]\nDetTime=100\n"
+                  "[Set]\nrpm=1\nsyn=2\nCycleGet=0\n[Wave]\nWaveDev=4\n"
+                  "[Form]\nFormX=300\nFormY=200\n";
+        }
 
         /* no isobar.ini -> import the legacy file */
         KgSettings m;
