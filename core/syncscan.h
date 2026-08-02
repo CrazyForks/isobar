@@ -31,11 +31,14 @@ struct FaxImage {
     static const int MAX_LINES = 2280; /* 19 min @ 120 rpm (docs/01 sec. 4) */
     std::vector<std::vector<uint8_t>> lines;  /* each WIDTH px, 0=black */
 
-    /* stats */
-    int lines_locked;     /* lines emitted on a detected sync edge */
-    int lines_corrected;  /* lines emitted on the fallback search */
-    int lines_coasted;    /* lines emitted on predicted position */
-    int relocks;          /* times lock was re-acquired after losing it */
+    /* Stats. Initialised here, not just by scan_lines: the GUI builds
+     * FaxImages of its own (the rotate buttons), and copying one with
+     * indeterminate counters into app->image is undefined behaviour -
+     * gcc catches it as -Wmaybe-uninitialized on this struct. */
+    int lines_locked = 0;     /* lines emitted on a detected sync edge */
+    int lines_corrected = 0;  /* lines emitted on the fallback search */
+    int lines_coasted = 0;    /* lines emitted on predicted position */
+    int relocks = 0;          /* times lock was re-acquired after losing it */
 };
 
 /* Tunable sync-scan thresholds. The defaults are the original program's
