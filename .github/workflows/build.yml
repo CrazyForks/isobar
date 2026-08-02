@@ -56,6 +56,24 @@ jobs:
       # default CMAKE_MSVC_RUNTIME_LIBRARY policy and is present on every
       # Windows machine. (Fully-static /MT via x64-windows-static causes
       # LNK2038 CRT-linkage mismatches and isn't worth it.)
+      # Without this the Windows job takes ~13 minutes and the other four
+      # take under one: brew and apt hand out prebuilt binaries, while
+      # vcpkg COMPILES fltk, rtaudio, libpng, libjpeg and zlib from source
+      # every run (13m01s of a 13m41s job on run 30729941242; our own code
+      # builds there in 23 s). vcpkg drops each built package into a binary
+      # cache, so caching that directory turns the install step into an
+      # unpack. A miss just rebuilds exactly as before - nothing breaks,
+      # it is only slow again. The key carries the port list; the vcpkg
+      # baseline moves with the runner image, hence the restore-key.
+      - name: Cache vcpkg binary packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-x64-windows-static-md-fltk-rtaudio-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-x64-windows-static-md-fltk-rtaudio-
+
       - name: Export vcpkg dependencies (Windows)
         if: runner.os == 'Windows'
         run: vcpkg --triplet x64-windows-static-md install fltk rtaudio
