@@ -26,12 +26,24 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   original), rotated by the tracked phase offset (sync edge → index 0);
   the grid never moves, tracking only adjusts the phase. Sync pulses =
   dark runs with width 100–400 samples, period 3980–4020 vs. the
-  previous line's edge. When the shape check fails: min-brightness
-  fallback search (full window until first lock, narrow window = syn
-  combo afterwards, validated by a dip depth below the local mean),
+  previous line's edge. When the shape check fails, two fallbacks in
+  order: first `fallback_edge()`, the original's own tracker ported
+  (boxcar minimum-mean over the binarised video, gated on a bright→dark
+  edge, validated against the absolute `fb_mean` bound = the original's
+  `SyncThre` 30, plus its `MaxJump` guard); then, only if that declines,
+  our older min-brightness search validated by a dip depth below the
+  local mean. The ported one is the more selective of the two but fires
+  less often, and the pair together beat either alone on every fixture.
   `ReleaseAfter` invalid lines → drop the lock, `LockAfter` valid lines →
   declare it, re-acquiring via a junk-tolerant period chain
   (spec 3.2(7)(8)(10)). 4000 samples → 1500 px via `line[8*i/3]`.
+  Re-acquisition after a release is confined to the neighbourhood of the
+  phase already held — a transmission's sync position does not move, only
+  its quality does — and widens back to the whole line only after
+  3 × `ReleaseAfter` lines with no lock at all, so a genuine change of
+  transmission can still be followed. Without that confinement an
+  all-dark phasing preamble releases the lock and the full-line search
+  re-locks onto a dark feature in the picture (`phasing-test`).
   NOTE the original's names for those two counters are the other way
   round from how they read: `LReSycn` releases, `RReSycn` locks. The port
   had them swapped until v1.2.0.

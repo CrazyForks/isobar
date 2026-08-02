@@ -67,7 +67,7 @@ DSP core is dependency-free.
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 10 headless tests
+ctest --test-dir build        # runs the 11 headless tests
 ```
 
 Install the dependencies first:
@@ -113,7 +113,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.2.0 released** — working software. All core receive features are
+**v1.3.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
 Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —

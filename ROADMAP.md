@@ -350,6 +350,42 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.3.0 — sync robustness + the original's fallback tracker
+  (S25):** a third user-supplied recording (16 kHz, two back-to-back
+  HIMAWARI IR charts, the first with a full transmission preamble) decoded
+  with its top quarter torn — ~283 lines shifted sideways by up to 1200 of
+  1500 px, on a signal whose true sync position never moves. Two defects,
+  both ours. Re-acquisition was bounds-checked only against the top of the
+  line window, so it could lock onto an edge from an *earlier* line and
+  drive the rotation offset negative (at the first line, indexing outside
+  the video buffer); and it searched a whole 4000-sample line, so after the
+  ~33 s all-dark phasing preamble released the lock it re-locked onto a
+  dark feature in the picture. Re-acquisition is now confined to the
+  neighbourhood of the phase already held, widening again only after
+  3 × `ReleaseAfter` lines with no lock — because a *genuine* change of
+  transmission must still be followed, as `jmh sample.wav` does at line 930.
+  **The original's fallback tracker is ported** (`fallback_edge`): boxcar
+  minimum-mean over the binarised video, gated on a bright→dark edge, with
+  the absolute `SyncThre` bound and the `MaxJump` guard. Our older
+  dip-depth search stays as a second chance where it declines — measured,
+  the pair beats either alone. `SyncThre` is finally adopted **at the
+  original's own value of 30**, because the ported formula computes the
+  same quantity; `Sync2Thre` stays ours (DEVIATIONS #16).
+  Getting there required correcting `docs/01` §3.2(7)(8) first: the S23
+  reading that the original's video is inverted relative to ours was
+  **wrong**, and its "sync detector" is really a *phasing-preamble*
+  detector — read literally with no inversion, 64 of the new fixture's 66
+  phasing lines validate, and 0 validate inverted at any threshold. Also
+  found in the decompile and previously undocumented: the fallback is a
+  two-boxcar edge test (constants 8 and 128, no ini key) with a jump guard.
+  Mis-phased picture lines: jmh sample 74→73, the new recording 196→28 (all
+  preamble and stop tone — zero picture damage), off-air 9→**0** with lock
+  ratio 78.3%→94.2%. Third fixture `jmh-phasing-16k.wav` + `phasing-test`;
+  ctest 10 → 11. All pre-existing MSVC/gcc warnings fixed — **0 compiler
+  warnings on all five CI runners**, two of them real bugs (a truncating
+  window title, and `FaxImage`'s counters left uninitialised by the rotate
+  button). CI: caching vcpkg's binary packages took the Windows job from
+  13m41s to 1m29s (it was rebuilding FLTK from source every run).
   **Released v1.2.0 — settings audit + any sample rate (S23):** the user
   supplied the `kgfax.ini` the original writes with untouched settings.
   Comparing it against the port found eight of twelve defaults wrong and,

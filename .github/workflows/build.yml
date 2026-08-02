@@ -1,7 +1,7 @@
 # Cross-platform build + test for Isobar.
 #
 # Matrix: macOS / Linux / Windows, on both Intel and ARM. Each job installs the
-# FLTK + RtAudio dependencies, configures with CMake, builds, and runs the 8
+# FLTK + RtAudio dependencies, configures with CMake, builds, and runs the 11
 # headless ctest tests (no audio hardware, no display needed).
 # Raw build artifacts are uploaded per OS for manual inspection.
 #

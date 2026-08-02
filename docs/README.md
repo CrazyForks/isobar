@@ -52,18 +52,22 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (packaging & cross-platform CI) done — v1.2.0
+workflow is complete; M6 (packaging & cross-platform CI) done — v1.3.0
 released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
-there are two committed test fixtures. `jmh-sample-short.wav` is a 30 s
-excerpt (44.1 kHz stereo Int16) of a strong signal — the full 9.6 min
-recording exists locally but is gitignored at 97 MB, and tests auto-detect
-whichever is present. `jmh-offair-12k.wav` is 60 s of a real off-air
-reception at 12 kHz (added v1.2.0): it is the only fixture that is not
-22050/44100 Hz, hence the only one exercising the resampler, and the only
-one weak enough to drive the fallback sync correction — both float-heavy
-paths that CI checks on x86_64 and aarch64 alike.
+there are three committed test fixtures, each covering something the others
+cannot. `jmh-sample-short.wav` is a 30 s excerpt (44.1 kHz stereo Int16) of a
+strong signal — the full 9.6 min recording exists locally but is gitignored at
+97 MB, and tests auto-detect whichever is present. `jmh-offair-12k.wav` is 60 s
+of a real off-air reception at 12 kHz (added v1.2.0): it is the only fixture
+that is not 22050/44100 Hz, hence one of two exercising the resampler, and the
+only one weak enough to drive the fallback sync correction — both float-heavy
+paths that CI checks on x86_64 and aarch64 alike. `jmh-phasing-16k.wav` is 90 s
+at 16 kHz of two back-to-back HIMAWARI IR charts (added v1.3.0): the only
+fixture containing a full transmission preamble — ~33 s of all-dark phasing
+lines between two pictures — which is the case that exposed the v1.3.0 phase
+runaway (`phasing-test`).
 
 ## How the next contributor should use this
 
