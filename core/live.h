@@ -87,6 +87,10 @@ private:
     bool locked;         /* currently locked (release clears)       */
     long last_shape;     /* absolute pos of last shape-locked edge  */
     int miss, since_shape;
+    int unlocked_for;    /* consecutive lines with no lock (widen search) */
+    long counted_grid;   /* line unlocked_for was last updated for: pump()
+                            re-enters on the same line while it waits for
+                            samples, and the count is per line */
     long lock_from;      /* smallest edge position not rejected for lock */
 
     std::atomic<bool> track;    /* Sync button, written by UI thread  */

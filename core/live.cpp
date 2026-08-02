@@ -27,6 +27,8 @@ void LiveScan::reset()
     last_shape = -1;
     miss = 0;
     since_shape = 0;
+    unlocked_for = 0;
+    counted_grid = -1;
     lock_from = 0;
     track_applied = true;
     man_req.store(false);
@@ -105,9 +107,12 @@ long LiveScan::try_lock(long grid)
      * find_lock (the two must stay byte-identical - live-test). Before
      * the first lock the whole line is searched; afterwards only the
      * fallback's neighbourhood around the expected phase, so an
-     * all-dark preamble cannot make the phase run away. */
+     * all-dark preamble cannot make the phase run away. The search
+     * widens again after widen_after lines with no lock at all, so a
+     * genuine change of transmission can still be followed. */
+    const int widen_after = p.max_coast > 0 ? 3 * p.max_coast : 30;
     long lo = grid, hi = grid + LINE_SAMPLES - 1;
-    if (ever_locked && p.fallback_win > 0) {
+    if (ever_locked && p.fallback_win > 0 && unlocked_for < widen_after) {
         long expected = grid + phi;
         if (expected - p.fallback_win / 2 > lo)
             lo = expected - p.fallback_win / 2;
@@ -257,6 +262,14 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
 
         if (track_applied) {
             long expected = grid + phi;
+            /* once per line, matching syncscan's counter exactly */
+            if (grid != counted_grid) {
+                counted_grid = grid;
+                if (!locked)
+                    unlocked_for++;
+                else
+                    unlocked_for = 0;
+            }
 
             if (!locked) {
                 long E = try_lock(grid);
@@ -268,6 +281,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     if (ever_locked)
                         relocks++;
                     locked = true;
+                    unlocked_for = 0;
                     ever_locked = true;
                     miss = 0;
                     since_shape = 0;

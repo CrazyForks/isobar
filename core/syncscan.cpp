@@ -175,12 +175,28 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
     int since_shape = 0;      /* lines since the last shape-detected edge */
     size_t ei = 0;            /* cursor into edges (match window)       */
     size_t lock_from = 0;     /* cursor into edges (lock acquisition)   */
+    int unlocked_for = 0;     /* consecutive lines with no lock         */
+
+    /* After this many consecutive unlocked lines, re-acquisition may
+     * search a whole line again instead of only the neighbourhood of the
+     * phase it was holding. A brief release mid-picture means noise, and
+     * the old phase is still the best guess; a long dead stretch can mean
+     * the transmission itself changed, and then the old phase is worthless
+     * (the JMH sample does exactly this - a new transmission starts at
+     * line 930 with the sync 2878 samples away, and it must be allowed to
+     * follow). Three times the release counter: long enough that no
+     * transient reaches it, short enough to catch a real handover. */
+    const int widen_after = p.max_coast > 0 ? 3 * p.max_coast : 30;
 
     for (long grid = 0; grid + LINE_SAMPLES <= total; grid += LINE_SAMPLES) {
         int how = 3;          /* 0 shape / 1 fallback / 2 coast / 3 unlocked */
 
         if (track_enable) {
             long expected = grid + phi;
+            if (!locked)
+                unlocked_for++;
+            else
+                unlocked_for = 0;
 
             if (!locked) {
                 /* lock acquisition: junk-tolerant chain of valid
@@ -200,9 +216,12 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                  * re-locks onto a dark feature in the picture - shifting
                  * the image sideways for tens of lines. Same
                  * neighbourhood the fallback search uses. The first lock
-                 * of the stream still searches the whole line. */
+                 * of the stream still searches the whole line, and so
+                 * does re-acquisition once the decoder has gone
+                 * widen_after lines with no lock at all. */
                 long lo = grid, hi = grid + LINE_SAMPLES - 1;
-                if (ever_locked && p.fallback_win > 0) {
+                if (ever_locked && p.fallback_win > 0 &&
+                    unlocked_for < widen_after) {
                     if (expected - p.fallback_win / 2 > lo)
                         lo = expected - p.fallback_win / 2;
                     if (expected + p.fallback_win / 2 < hi)
@@ -217,6 +236,7 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     if (ever_locked)
                         img.relocks++;   /* re-acquire after release */
                     locked = true;
+                    unlocked_for = 0;
                     ever_locked = true;
                     miss = 0;
                     since_shape = 0;
