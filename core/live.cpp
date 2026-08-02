@@ -25,6 +25,7 @@ void LiveScan::reset()
     fb_dir = 0;
     fb_run = 0;
     finishing = false;
+    manual_hold = false;
     ever_locked = false;
     locked = false;
     last_shape = -1;
@@ -289,6 +290,12 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
             phi = (phi + d + LINE_SAMPLES) % LINE_SAMPLES;
             fb_dir = 0;
             fb_run = 0;
+            /* The user has asserted where the sync is. sync_step_lock
+             * searches the WHOLE line and would walk straight off to the
+             * strongest sync-looking pulse - which is exactly what this
+             * feature exists to override (cli/manual-sync-test.cpp). Hold
+             * it off until the decoder earns a shape lock of its own. */
+            manual_hold = true;
             track_applied = true;
             locked = true;
             ever_locked = true;
@@ -334,6 +341,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
+                    manual_hold = false;
                     last_shape = E;
                     if (ever_locked)
                         relocks++;
@@ -364,6 +372,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
+                        manual_hold = false;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -398,11 +407,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                      * has arrived. finish() drops the wait so the last
                      * line of a stream still comes out, exactly as the
                      * batch scanner skips the check when the file ends. */
-                    if (!finishing &&
-                        (long)buf.size() < grid + 2 * LINE_SAMPLES)
-                        return;
-                    fb = sync_step_lock(sm, grid, phi, p);
-                    snapped = fb >= 0;
+                    if (!manual_hold) {
+                        if (!finishing &&
+                            (long)buf.size() < grid + 2 * LINE_SAMPLES)
+                            return;
+                        fb = sync_step_lock(sm, grid, phi, p);
+                        snapped = fb >= 0;
+                    }
                 }
                 if (fb < 0 && have) {
                     /* ported tracker first, our dip-depth search as the

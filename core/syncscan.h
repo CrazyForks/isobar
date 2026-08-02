@@ -85,11 +85,17 @@ SyncParams sync_default_params();
 /* The one unambiguous sync pulse in a line, or -1 if there isn't one.
  *
  * Darkest fallback_win window anywhere in the line, accepted only if it
- * really is a sync pulse and not just the darkest patch of picture: the
- * window itself must be dark (dark_th) and the best rival at least 300
- * samples away must be at least dark_th/2 brighter. A real sync pulse
- * wins by a mile; picture content does not. Returns the position as a
- * phase within the line. */
+ * really is a sync pulse and not just the darkest patch of picture:
+ *   - the window must be dark (dark_th), and
+ *   - the best rival at least 300 samples away must be dark_th/2
+ *     brighter - a real sync pulse wins by a mile, picture content does
+ *     not, and
+ *   - the dark run it sits in must be a plausible sync pulse WIDTH
+ *     (min_pulse..max_pulse), the same bound find_sync_edges applies.
+ * The width test is what keeps a chart's wide black margin out: a margin
+ * is darker than anything and repeats on every line, so neither of the
+ * first two tests excludes it on their own.
+ * Returns the position as a phase within the line. */
 inline long sync_line_pulse(const std::vector<int> &sm, long grid,
                             const SyncParams &p)
 {
@@ -122,6 +128,20 @@ inline long sync_line_pulse(const std::vector<int> &sm, long grid,
             rival = m[q];
     }
     if (m[best] >= p.dark_th || rival - m[best] < p.dark_th / 2)
+        return -1;
+
+    /* width: expand the dark run around the darkest sample in the window */
+    long dmin = best;
+    for (long i = best; i < best + win; i++)
+        if (sm[grid + i % LINE] < sm[grid + dmin % LINE])
+            dmin = i;
+    long lo = dmin, hi = dmin;
+    while (hi - lo < LINE && sm[grid + (lo - 1 + LINE) % LINE] < p.dark_th)
+        lo--;
+    while (hi - lo < LINE && sm[grid + (hi + 1) % LINE] < p.dark_th)
+        hi++;
+    long run = hi - lo + 1;
+    if (run < p.min_pulse || run > p.max_pulse)
         return -1;
     return best;
 }

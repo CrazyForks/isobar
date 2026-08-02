@@ -82,7 +82,12 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     raised mis-phased picture lines on the off-air recording from 36 to 211.
     So a whole-line search runs first, accepted only when the pulse is
     unambiguous (nearest rival ≥ 300 samples away and ≥ `DarkThreshold`/2
-    brighter) *and* the **next** line agrees with it. That is **one line of
+    brighter, and the dark run it sits in is 100..400 samples wide — the
+    bound the shape check already uses, which is what keeps a chart's wide
+    black margin out) *and* the **next** line agrees with it. A hand-placed
+    sync position (`nudge_phase`) suppresses the search entirely until the
+    decoder earns a shape lock of its own, since overriding the strongest
+    sync-looking pulse is exactly what that feature is for. That is **one line of
     lookahead**, and it is deliberate: confirming forwards instead of
     backwards lets the step be followed on the very line it starts on,
     which is the line whose strip would otherwise be split. It costs the

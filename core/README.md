@@ -45,8 +45,10 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   SDR's clock-slip correction), and `jmh sample.wav` does it at line 930
   where a new transmission starts. It takes the darkest `syn` window in
   the whole line, but only when that pulse is unambiguous — nearest rival
-  at least 300 samples away and `DarkThreshold`/2 brighter — and only
-  when the **next** line agrees with it. That one line of **lookahead** is
+  at least 300 samples away and `DarkThreshold`/2 brighter, and the dark
+  run it sits in is a plausible sync-pulse width (the same 100..400
+  samples `find_sync_edges` requires, which is what keeps a chart's wide
+  black margin out) — and only when the **next** line agrees with it. That one line of **lookahead** is
   what makes a whole-line search safe here, where a bare one re-locks onto
   picture content (`phasing-test`), and confirming forwards rather than
   backwards is what lets the step be followed on the very line it starts
@@ -113,7 +115,11 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   sync align (docs/01 §3.2): the UI thread posts a phase shift in
   samples, `pump()` applies it at the next line boundary and keeps the
   lock so the search stays centred on the position the user gave
-  (`ctest --test-dir build -R manual-sync-test`). `finish()` releases the
+  (`ctest --test-dir build -R manual-sync-test`). A hand-placed position
+  also suppresses `sync_step_lock` until the decoder earns a shape lock of
+  its own: a whole-line search would walk straight off to the strongest
+  sync-looking pulse, which is the very thing the manual position exists
+  to override. `finish()` releases the
   line `sync_step_lock`'s lookahead is holding back; call it on the feed
   thread when the stream ends, or the last line never comes out.
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,

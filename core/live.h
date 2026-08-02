@@ -97,6 +97,7 @@ private:
     long phi;            /* rotation offset within the line window */
     int fb_dir, fb_run;  /* far-fallback run, for sync_slew (syncscan.h) */
     bool finishing;      /* end of stream: emit without lookahead        */
+    bool manual_hold;    /* hand-placed phase outranks sync_step_lock    */
     bool ever_locked;    /* fallback search: full window until then */
     bool locked;         /* currently locked (release clears)       */
     long last_shape;     /* absolute pos of last shape-locked edge  */
