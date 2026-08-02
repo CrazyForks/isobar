@@ -120,8 +120,17 @@ libraries / file format, all centred on the group's inner width, and
 they no longer sit at the original's label coordinates. Control-to-setting mapping (by row, top to bottom):
 ComboBox1 = SyncThre (value 20*index+10); its 3 items are the named
 presets 厳しい/通常/優しい (index 0/1/2 = Strict/Normal/Gentle ->
-SyncThre 10/30/50), then spinners LReSycn,
-RReSycn, SyncWidth (n where width = 10*n ms), Sync2Thre, DetTime.
+SyncThre 10/30/50), then spinners LReSycn, RReSycn, SyncWidth,
+Sync2Thre, DetTime.
+
+`SyncWidth` is **in samples**, not milliseconds — an earlier note here
+read "n where width = 10*n ms", which was a misreading of `UpDown5`'s
+step (the paired Edit shows the raw field; the up/down position is
+field/10, so the arrows move it in tens). See `docs/01` sec. 5.
+`DetTime` likewise is a **count of 100 ms blocks**, not milliseconds.
+The port's own labels use its clearer names (Release after / Lock after /
+Max jump / Dark thresh / Ctl det (x100ms)); `docs/01` sec. 6 has the
+key-name mapping.
 
 | Control | Class | Left | Top | Width | Height | Caption | English |
 |---|---|---|---|---|---|---|---|

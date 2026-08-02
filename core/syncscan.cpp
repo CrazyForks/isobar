@@ -67,8 +67,9 @@ std::vector<long> find_sync_edges(const std::vector<int> &sm,
 
 /* Find the first index in edges (from `from`) that starts a valid lock:
  * a chain of lock_hyst valid periods (~4000 samples apart), skipping
- * junk edges from image content in between (LReSycn lock hysteresis,
- * docs/01 sec. 3.2(8)). Returns edges.size() if none. */
+ * junk edges from image content in between (lock_hyst, which comes from
+ * RReSycn - NOT LReSycn, which is the release counter; docs/01
+ * sec. 3.2(8)). Returns edges.size() if none. */
 size_t find_lock(const std::vector<long> &edges, size_t from,
                  const SyncParams &p)
 {

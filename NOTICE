@@ -2,9 +2,9 @@ Isobar
 =======
 
 Isobar is a cross-platform WEFAX (emission J3C) weather-fax decoder that
-reimplements the behavior of, and is fully interoperable with, KG-FAX v1.1.3
-(K.G, 2009) — including its `.syn` file format, settings (`.ini`) schema,
-and UI workflow.
+reimplements the behavior of, and interoperates with, KG-FAX v1.1.3
+(K.G, 2009) — including its `.syn` file format, its settings (`.ini`)
+schema, and its UI workflow.
 
 Original work
 -------------
@@ -47,11 +47,15 @@ is independent and NOT affiliated with, endorsed by, or derived from KG-FAX.
 
 Interoperability
 ----------------
-Isobar reads and writes KG-FAX `.syn` files and the `kgfax.ini` settings
-file for interoperability only. The `.syn` format (including its radix-255
-line-count encoding) and the ini key names (including their original
-spellings) are reproduced exactly because file-format interoperability
-requires it.
+Isobar reads and writes KG-FAX `.syn` files for interoperability only. The
+`.syn` format, including its radix-255 line-count encoding, is reproduced
+exactly because file-format interoperability requires it.
+
+Isobar keeps its own settings in `isobar.ini` and never writes `kgfax.ini`.
+It reads an existing `kgfax.ini` once, to carry a user's preferences over
+on first run; that reader reproduces the original's section and key names
+(including their original spellings) only so far as reading such a file
+requires.
 
 Trademarks
 ----------

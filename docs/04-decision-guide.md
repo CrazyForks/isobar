@@ -65,7 +65,9 @@ trade-off explicitly and let the user pick; default recommendation: **A**.
 ## Definition of "bug-for-bug" for this project
 
 - **Replicate exactly**: DSP output for identical PCM input; `.syn` format;
-  ini schema (including `LReSycn`/`RReSycn` typos); sync/slant/palette/zoom/
+  ini schema — structure and encodings, though v1.2.0 split the file from the
+  original's and renamed its six tuning keys (`DEVIATIONS.md` #6, #16);
+  sync/slant/palette/zoom/
   rotate semantics; the 10 forms' layout and control behavior.
 - **Deliberately do not replicate**: GUI-thread DSP serialization;
   Windows-mixer shell-outs; anything recorded in DEVIATIONS.md.

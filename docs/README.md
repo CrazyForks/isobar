@@ -56,9 +56,14 @@ workflow is complete; M6 (packaging & cross-platform CI) done — v1.2.0
 released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
-test fixture is the committed 30 s excerpt `jmh-sample-short.wav` (44.1 kHz
-stereo Int16; a full 9.6 min recording exists locally but is gitignored —
-97 MB, too large for git; tests auto-detect and use whichever is present).
+there are two committed test fixtures. `jmh-sample-short.wav` is a 30 s
+excerpt (44.1 kHz stereo Int16) of a strong signal — the full 9.6 min
+recording exists locally but is gitignored at 97 MB, and tests auto-detect
+whichever is present. `jmh-offair-12k.wav` is 60 s of a real off-air
+reception at 12 kHz (added v1.2.0): it is the only fixture that is not
+22050/44100 Hz, hence the only one exercising the resampler, and the only
+one weak enough to drive the fallback sync correction — both float-heavy
+paths that CI checks on x86_64 and aarch64 alike.
 
 ## How the next contributor should use this
 

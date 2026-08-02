@@ -28,10 +28,13 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   dark runs with width 100–400 samples, period 3980–4020 vs. the
   previous line's edge. When the shape check fails: min-brightness
   fallback search (full window until first lock, narrow window = syn
-  combo afterwards, validated by SyncThre dip depth), LReSycn
-  lock/release hysteresis, RReSycn full release → re-acquire via a
-  junk-tolerant period chain (spec 3.2(7)(8)(10)). 4000 samples →
-  1500 px via `line[8*i/3]`.
+  combo afterwards, validated by a dip depth below the local mean),
+  `ReleaseAfter` invalid lines → drop the lock, `LockAfter` valid lines →
+  declare it, re-acquiring via a junk-tolerant period chain
+  (spec 3.2(7)(8)(10)). 4000 samples → 1500 px via `line[8*i/3]`.
+  NOTE the original's names for those two counters are the other way
+  round from how they read: `LReSycn` releases, `RReSycn` locks. The port
+  had them swapped until v1.2.0.
 - `fft.*` — 4096-point radix-2 FFT + Hann window, magnitudes in dBFS;
   used by the GUI spectrum scope (spec section 3.3).
 - `settings.*` — settings in the original's structure (spec section 6),
@@ -48,8 +51,11 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   `sync_params_from_settings()` is the single settings→decoder mapping,
   used by both the GUI and the tests.
   `scan_lines` takes an optional
-  `SyncParams` (defaults = the M0 hardcoded values); the GUI reaches
-  it via SyncWidth → pulse widths and RReSycn → max coast.
+  `SyncParams`; `sync_params_from_settings()` in `settings.*` is the one
+  place the ini maps onto it (`MaxJump` → `search_win`, `ReleaseAfter` →
+  `max_coast`, `LockAfter` → `lock_hyst`, …). The 100..400-sample pulse
+  window is NOT settable — it is hard-coded in the original and has no
+  ini key.
 - `tonedetect.*` — 300/450 Hz start/stop tone resonators (spec 3.2(5)):
   sign(video) → ±10000 into 2-pole resonators (10 Hz BW), envelope LPF,
   100 ms block max. Runs on the 8000 S/s video stream (the original
@@ -86,9 +92,13 @@ gui/main.cpp `live_sample`).
 
 ## Known simplifications / future work
 
-- The fallback edge validation (dark + dip depth ≥ SyncThre below the
-  window mean) is an approximation: the spec gives the search but not
-  the exact acceptance test (core/syncscan.cpp comment).
+- The fallback edge validation (dark + dip depth ≥ `FallbackDepth` below
+  the window mean) is deliberately NOT the original's. The original
+  slides a boxcar over the binarised video and accepts the minimum *mean*
+  if that mean is below `SyncThre` — an absolute bound, not a dip depth.
+  Its whole sync detector is now traced in spec 3.2(7)(8); porting the
+  fallback tracker is a well-specified future job, and `DEVIATIONS.md`
+  #16 records why we did not simply adopt its thresholds.
 - Decimation 22050→8000 uses linear interpolation; adequate because the
   video LPF (1200 Hz) is far below the 4 kHz output Nyquist.
 - 60 rpm mode has no real-world recording test yet (only the synthetic

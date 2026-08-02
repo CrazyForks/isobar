@@ -44,12 +44,16 @@ Clear, Quit all functional.
   click = pause/resume (screenshot-verified)
 
 ## M3 — Settings ✅
-- ✅ ini persistence, original schema incl. `LReSycn`/`RReSycn` typos,
-  stored next to the executable like the original (`<exe-dir>/kgfax.ini`;
-  was `~/kgfax.ini` until 2026-07-30, user request)
+- ✅ ini persistence in the original's structure, stored next to the
+  executable like the original — `<exe-dir>/isobar.ini` (was `~/kgfax.ini`
+  until 2026-07-30, then `<exe-dir>/kgfax.ini` until v1.2.0, when the file
+  was split from the original's and the six tuning keys renamed to say what
+  they mean; see `DEVIATIONS.md` #6 and #16). An existing `kgfax.ini` is
+  imported once, preferences only.
 - ✅ Details… dialog (Form4 replica, English)
-- ✅ All sync settings live (SyncWidth/SyncThre/Sync2Thre/LReSycn/RReSycn
-  + syn combo → fallback window); DetTime live for tone-detection
+- ✅ All sync settings live (MaxJump/FallbackDepth/DarkThreshold/
+  ReleaseAfter/LockAfter + syn combo → fallback window); ToneBlocks live
+  for tone-detection
   hysteresis
 - ✅ Save settings on quit (rpm/sync choices, window position; also on
   title-bar close; `--test-quit-save` dev flag)
@@ -150,7 +154,8 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
 - ✅ Project name + license + NOTICE done (Session 10). Name **Isobar**;
   license **GPLv3+**; `LICENSE` + `NOTICE` written. Binaries renamed
   `kgfax-*` → `isobar-*`; window title, CLI strings, include guards all
-  updated (`kgfax.ini` filename KEPT = interop). `docs/01` cleaned: private
+  updated (`kgfax.ini` filename KEPT = interop — **reversed in v1.2.0**, see
+  the S23 notes and `DEVIATIONS.md` #6). `docs/01` cleaned: private
   banner removed, all decompile line-number refs + VA addresses + `asm:`
   refs stripped (Hex-Rays symbol names `sub_XXXX` kept — they're IDA
   output, not K.G identifiers, and the second-AI audit confirmed they're
