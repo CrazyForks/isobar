@@ -60,7 +60,11 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   (`DEVIATIONS.md` #16).
   `ReleaseAfter` invalid lines → drop the lock, `LockAfter` valid lines →
   declare it, re-acquiring via a junk-tolerant period chain
-  (spec 3.2(7)(8)(10)). 4000 samples → 1500 px via `line[8*i/3]`.
+  (spec 3.2(7)(8)(10)). NOTE `LockAfter` is what limits tolerance of a
+  *gappy* source: the chain needs `LockAfter` consecutive valid periods,
+  so an audio dropout more often than every ~3 s stops the decoder locking
+  at all. Lowering it to 1–3 fixes that and costs nothing on clean audio —
+  measured, `ROADMAP.md` M6. 4000 samples → 1500 px via `line[8*i/3]`.
   Re-acquisition after a release is confined to the neighbourhood of the
   phase already held — a transmission's sync position does not move, only
   its quality does — and widens back to the whole line only after
