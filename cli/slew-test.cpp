@@ -18,9 +18,10 @@
  * either the shape check (+-search_win = 20) or the fallback
  * (+-fallback_win/2 = 80) can reach. The decoder used to spend a dozen lines
  * crawling or lurching toward it, and every one of those lines had the strip
- * split. `sync_step_lock()` in core/syncscan.h follows the step in one line
- * once the next line confirms it; `sync_slew()` rate-limits everything else.
- * 12 of 119 line pairs used to move the strip by more than 10 px.
+ * split. `sync_step_lock()` in core/syncscan.h follows the step on the very
+ * line it starts on, using one line of lookahead to confirm it; `sync_slew()`
+ * rate-limits everything else. 12 of 119 line pairs used to move the strip by
+ * more than 10 px.
  *
  * The check is physical rather than a byte-exact reference, like
  * phasing-test: find the darkest 60-px window near index 0 on each line and
@@ -65,9 +66,9 @@ int main()
         printf("FAIL: %zu lines, expected 120\n", img.lines.size());
         return 1;
     }
-    /* The step is followed by the fallback path, so some correction must
-     * still happen; if it stops, the test has quietly stopped testing. */
-    if (img.lines_corrected < 2) {
+    /* Following the step is a "corrected" line, so at least one must
+     * happen; if none do, the test has quietly stopped testing. */
+    if (img.lines_corrected < 1) {
         printf("FAIL: only %d corrected lines - this excerpt is supposed "
                "to exercise the fallback\n", img.lines_corrected);
         return 1;

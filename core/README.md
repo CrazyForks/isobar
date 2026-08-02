@@ -40,14 +40,17 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   error does not shift a line, it **splits** the strip across both ends,
   which is what makes such lines unreadable (`slew-test`).
   `sync_step_lock()` handles a **genuine step** in the sync position:
-  real transmissions jump further than any narrow search reaches (162
-  samples on the off-air recording, mid-picture; a new transmission at
-  line 930 of `jmh sample.wav`). It takes the darkest `syn` window in the
-  whole line, but only when that pulse is unambiguous — nearest rival at
-  least 300 samples away and `DarkThreshold`/2 brighter — and only once
-  the previous line agreed on it. That two-line confirmation is what
-  makes a whole-line search safe here, where a bare one re-locks onto
-  picture content (`phasing-test`). `sync_slew()` handles everything
+  real transmissions jump further than any narrow search reaches — the
+  off-air recording steps −162 samples ten times mid-picture (a networked
+  SDR's clock-slip correction), and `jmh sample.wav` does it at line 930
+  where a new transmission starts. It takes the darkest `syn` window in
+  the whole line, but only when that pulse is unambiguous — nearest rival
+  at least 300 samples away and `DarkThreshold`/2 brighter — and only
+  when the **next** line agrees with it. That one line of **lookahead** is
+  what makes a whole-line search safe here, where a bare one re-locks onto
+  picture content (`phasing-test`), and confirming forwards rather than
+  backwards is what lets the step be followed on the very line it starts
+  on — the line whose strip would otherwise be split. `sync_slew()` handles everything
   else: a move within `MaxJump` is taken whole, anything further is
   rate-limited to `MaxJump`/4 samples, doubling for each consecutive line
   agreeing on the direction. The original rejects a far fallback result
@@ -110,7 +113,9 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   sync align (docs/01 §3.2): the UI thread posts a phase shift in
   samples, `pump()` applies it at the next line boundary and keeps the
   lock so the search stays centred on the position the user gave
-  (`ctest --test-dir build -R manual-sync-test`).
+  (`ctest --test-dir build -R manual-sync-test`). `finish()` releases the
+  line `sync_step_lock`'s lookahead is holding back; call it on the feed
+  thread when the stream ends, or the last line never comes out.
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
 

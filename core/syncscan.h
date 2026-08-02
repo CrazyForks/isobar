@@ -82,32 +82,16 @@ struct SyncParams {
 
 SyncParams sync_default_params();
 
-/* Follow a genuine step in the transmission's sync position.
+/* The one unambiguous sync pulse in a line, or -1 if there isn't one.
  *
- * The narrow searches above cannot: the shape check reaches +-search_win
- * (20 samples) and the fallback +-fallback_win/2 (80), while a real step
- * is bigger than either. The 12 kHz off-air recording steps 162 samples
- * between one line and the next and then holds the new position for the
- * rest of the reception; the 44.1 kHz sample does the same at line 930
- * where a new transmission starts. Without this the decoder spends ten
- * or more lines crawling toward the new position - and every one of those
- * lines has the sync strip split across the line's two ends, which is
- * what makes those lines unreadable.
- *
- * So: find the darkest fallback_win window in the WHOLE line and take it
- * only if it is unambiguous - the best rival at least 300 samples away
- * must be at least dark_th/2 brighter - and only once the PREVIOUS line
- * agreed on the same position. A real sync pulse wins by a mile and does
- * not move; picture content neither wins by a mile nor repeats. That
- * two-line confirmation is what makes a whole-line search safe here,
- * where the bare one used to re-lock onto dark picture content
- * (`phasing-test`, docs/01 sec. 3.2(8)).
- *
- * Returns the absolute position to snap to, or -1 to leave the phase
- * alone. `cand`/`cand_hits` carry the candidate across lines; a shape
- * lock resets them (pass -1/0). Shared by scan_lines and LiveScan. */
-inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
-                           const SyncParams &p, long &cand, int &cand_hits)
+ * Darkest fallback_win window anywhere in the line, accepted only if it
+ * really is a sync pulse and not just the darkest patch of picture: the
+ * window itself must be dark (dark_th) and the best rival at least 300
+ * samples away must be at least dark_th/2 brighter. A real sync pulse
+ * wins by a mile; picture content does not. Returns the position as a
+ * phase within the line. */
+inline long sync_line_pulse(const std::vector<int> &sm, long grid,
+                            const SyncParams &p)
 {
     const long LINE = 4000;
     int win = p.fallback_win > 0 ? p.fallback_win : 160;
@@ -137,27 +121,60 @@ inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
         if (m[q] < rival)
             rival = m[q];
     }
+    if (m[best] >= p.dark_th || rival - m[best] < p.dark_th / 2)
+        return -1;
+    return best;
+}
 
-    /* not a clear, dark pulse: forget any candidate we were building */
-    if (m[best] >= p.dark_th || rival - m[best] < p.dark_th / 2) {
-        cand = -1;
-        cand_hits = 0;
+/* Follow a genuine step in the transmission's sync position.
+ *
+ * The narrow searches above cannot: the shape check reaches +-search_win
+ * (20 samples) and the fallback +-fallback_win/2 (80), while a real step
+ * is bigger than either. The 12 kHz off-air recording steps 162 samples
+ * between one line and the next and then holds the new position for the
+ * rest of the reception; the 44.1 kHz sample does the same at line 930
+ * where a new transmission starts. Without this the decoder spends ten
+ * or more lines crawling toward the new position - and every one of those
+ * lines has the sync strip split across the line's two ends, which is
+ * what makes those lines unreadable. On a KiwiSDR or any other networked
+ * SDR feed, a dropout leaves exactly this kind of step.
+ *
+ * One line of LOOKAHEAD: the pulse found in THIS line is acted on only if
+ * the NEXT line agrees with it. A real sync pulse repeats at the same
+ * phase; a dark patch of picture does not. Confirming forwards rather
+ * than backwards is what lets the step be followed on the very line it
+ * starts on, instead of one line later - which matters because that line
+ * is the one whose strip is split. It is also what makes a whole-line
+ * search safe at all, where a bare one re-locks onto dark picture content
+ * (`phasing-test`, docs/01 sec. 3.2(8)).
+ *
+ * Needs two whole lines of video from `grid`; callers that do not have
+ * them yet must wait (LiveScan) or skip the check (end of a file).
+ * Returns the absolute position to snap to, or -1 to leave the phase
+ * alone. Shared by scan_lines and LiveScan. */
+inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
+                           const SyncParams &p)
+{
+    const long LINE = 4000;
+    if (grid < 0 || grid + 2 * LINE > (long)sm.size())
         return -1;
-    }
-    long dc = best - cand < 0 ? cand - best : best - cand;
-    if (cand >= 0 && (dc <= p.search_win || dc >= LINE - p.search_win))
-        cand_hits++;
-    else {
-        cand = best;
-        cand_hits = 1;
-    }
-    /* only worth acting on if it is somewhere the narrow search cannot
+
+    long here = sync_line_pulse(sm, grid, p);
+    if (here < 0)
+        return -1;
+    long next = sync_line_pulse(sm, grid + LINE, p);
+    if (next < 0)
+        return -1;
+    long dc = here - next < 0 ? next - here : here - next;
+    if (dc > p.search_win && dc < LINE - p.search_win)
+        return -1;              /* the next line does not agree */
+
+    /* only worth acting on if it is somewhere the narrow searches cannot
      * already reach - otherwise the ordinary tracking has it in hand */
-    long dp = best - phi < 0 ? phi - best : best - phi;
-    if (cand_hits < 2 || dp <= p.search_win || dp >= LINE - p.search_win)
+    long dp = here - phi < 0 ? phi - here : here - phi;
+    if (dp <= p.search_win || dp >= LINE - p.search_win)
         return -1;
-    cand_hits = 0;
-    return grid + best;
+    return grid + here;
 }
 
 /* Move the line phase toward a fallback result, rate-limited.

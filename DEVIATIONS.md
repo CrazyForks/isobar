@@ -82,13 +82,18 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     raised mis-phased picture lines on the off-air recording from 36 to 211.
     So a whole-line search runs first, accepted only when the pulse is
     unambiguous (nearest rival ≥ 300 samples away and ≥ `DarkThreshold`/2
-    brighter) *and* the previous line agreed on the same position: the step
-    is then taken whole, costing one line instead of a dozen. Everything
-    else is rate-limited — `MaxJump`/4 samples on the first line, doubling
-    per consecutive line agreeing on the direction. Line-to-line strip
-    movement over 10 px, on the three full recordings: `jmh sample` 54→13,
-    `FAXSignal` 25→18, off-air **56→8**; mis-phased picture lines off-air
-    **36→13**. Guarded by `slew-test`.
+    brighter) *and* the **next** line agrees with it. That is **one line of
+    lookahead**, and it is deliberate: confirming forwards instead of
+    backwards lets the step be followed on the very line it starts on,
+    which is the line whose strip would otherwise be split. It costs the
+    live path half a second of latency — a completed line is held until the
+    line after it arrives — and adds `LiveScan::finish()`, without which the
+    last line of a reception would never be emitted. Everything that is not
+    a confirmed step is rate-limited instead: `MaxJump`/4 samples on the
+    first line, doubling per consecutive line agreeing on the direction.
+    Line-to-line strip movement over 10 px, on the three full recordings:
+    `jmh sample` 54→13, `FAXSignal` 25→18, off-air **56→8**; mis-phased
+    picture lines off-air **36→9**. Guarded by `slew-test`.
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is

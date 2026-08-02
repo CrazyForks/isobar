@@ -15,6 +15,9 @@
  * - "no edge near the predicted position" is only decidable once bytes
  *   past expected+search_win+max_pulse have arrived
  * - lock acquisition waits until the whole hysteresis chain is decidable
+ * - a completed line is held back until the NEXT line has arrived, because
+ *   sync_step_lock() confirms a step with one line of lookahead; finish()
+ *   releases the held line at end of stream
  * Buffers keep the whole stream (~0.5 MB/min of video) - fine for a
  * 19-minute reception; reset() between receptions to free it.
  */
@@ -62,6 +65,15 @@ struct LiveScan {
               void (*line_cb)(const uint8_t *line1500, int state, void *ud),
               void *ud);
 
+    /* End of stream. sync_step_lock() needs one line of lookahead, so a
+     * completed line is held back until the line after it has arrived;
+     * this emits the held line without that confirmation, which is what
+     * the batch scanner does when a file ends. Without it the last line
+     * of a reception never comes out. NOT thread-safe: call it on the
+     * thread that calls feed(). */
+    void finish(void (*line_cb)(const uint8_t *line1500, int state,
+                                void *ud), void *ud);
+
     /* stats (same meanings as FaxImage) */
     int lines_locked;
     int lines_corrected;
@@ -84,8 +96,7 @@ private:
      * adjusts phi, the grid never moves */
     long phi;            /* rotation offset within the line window */
     int fb_dir, fb_run;  /* far-fallback run, for sync_slew (syncscan.h) */
-    long cand;           /* whole-line pulse a step is building on       */
-    int cand_hits;       /* lines that agreed on it (sync_step_lock)     */
+    bool finishing;      /* end of stream: emit without lookahead        */
     bool ever_locked;    /* fallback search: full window until then */
     bool locked;         /* currently locked (release clears)       */
     long last_shape;     /* absolute pos of last shape-locked edge  */

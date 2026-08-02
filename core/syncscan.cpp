@@ -235,8 +235,6 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
     long phi = 0;             /* rotation offset within the line window */
     int fb_dir = 0;           /* direction of the current far-fallback run */
     int fb_run = 0;           /* consecutive far results agreeing on it    */
-    long cand = -1;           /* whole-line pulse a step is building on    */
-    int cand_hits = 0;        /* consecutive lines that agreed on it       */
     bool ever_locked = false; /* fallback search: full window until then */
     bool locked = false;      /* currently locked (release clears)      */
     long last_shape = -1;     /* absolute pos of last shape-locked edge */
@@ -303,8 +301,6 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     phi = (E - grid) % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
-                    cand = -1;
-                    cand_hits = 0;
                     last_shape = E;
                     if (ever_locked)
                         img.relocks++;   /* re-acquire after release */
@@ -334,8 +330,6 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
-                        cand = -1;
-                        cand_hits = 0;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -373,7 +367,7 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                  * line first - sync_step_lock only answers when the
                  * pulse is unambiguous and the previous line agreed. */
                 if (ever_locked) {
-                    fb = sync_step_lock(sm, grid, phi, p, cand, cand_hits);
+                    fb = sync_step_lock(sm, grid, phi, p);
                     snapped = fb >= 0;
                 }
                 if (fb < 0 && lo <= hi) {

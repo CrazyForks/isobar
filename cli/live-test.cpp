@@ -40,6 +40,9 @@ static int run_case(const std::vector<uint8_t> &video, size_t chunk,
             n = chunk;
         ls.feed(video.data() + off, n, on_line, &c);
     }
+    /* sync_step_lock needs one line of lookahead, so the last line is
+     * held back until the stream is declared over (core/live.h) */
+    ls.finish(on_line, &c);
 
     bool ok = c.img.lines.size() == ref.lines.size() &&
               ls.lines_locked == ref.lines_locked &&

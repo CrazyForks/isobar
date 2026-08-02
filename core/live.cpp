@@ -24,8 +24,7 @@ void LiveScan::reset()
     phi = 0;
     fb_dir = 0;
     fb_run = 0;
-    cand = -1;
-    cand_hits = 0;
+    finishing = false;
     ever_locked = false;
     locked = false;
     last_shape = -1;
@@ -40,6 +39,16 @@ void LiveScan::reset()
     lines_corrected = 0;
     lines_coasted = 0;
     relocks = 0;
+}
+
+void LiveScan::finish(void (*line_cb)(const uint8_t *, int, void *),
+                      void *ud)
+{
+    /* End of stream: emit whatever pump() is holding back for lookahead.
+     * NOT thread-safe - call it on the same thread that calls feed(). */
+    finishing = true;
+    pump(line_cb, ud);
+    finishing = false;
 }
 
 void LiveScan::set_track(bool on)
@@ -280,8 +289,6 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
             phi = (phi + d + LINE_SAMPLES) % LINE_SAMPLES;
             fb_dir = 0;
             fb_run = 0;
-            cand = -1;
-            cand_hits = 0;
             track_applied = true;
             locked = true;
             ever_locked = true;
@@ -327,8 +334,6 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
-                    cand = -1;
-                    cand_hits = 0;
                     last_shape = E;
                     if (ever_locked)
                         relocks++;
@@ -359,8 +364,6 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
-                        cand = -1;
-                        cand_hits = 0;
                         last_shape = E;
                         miss = 0;
                         since_shape = 0;
@@ -389,8 +392,16 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     } else {
                         have = false;
                     }
-                    /* whole-line step first - mirrors syncscan exactly */
-                    fb = sync_step_lock(sm, grid, phi, p, cand, cand_hits);
+                    /* Whole-line step first - mirrors syncscan exactly.
+                     * It needs the NEXT line too (one line of lookahead,
+                     * syncscan.h), so hold this line back until that data
+                     * has arrived. finish() drops the wait so the last
+                     * line of a stream still comes out, exactly as the
+                     * batch scanner skips the check when the file ends. */
+                    if (!finishing &&
+                        (long)buf.size() < grid + 2 * LINE_SAMPLES)
+                        return;
+                    fb = sync_step_lock(sm, grid, phi, p);
                     snapped = fb >= 0;
                 }
                 if (fb < 0 && have) {
