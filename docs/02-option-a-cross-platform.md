@@ -52,7 +52,7 @@ isobar/
 │   ├── faxview / scopeview  # Image1 preview + Image3 spectrum/waterfall
 │   ├── *dialog.cpp          # Form2/4/5/6/8/9/10 replicas
 │   └── audio.cpp            # RtAudio live input (22050 Hz mono callback)
-└── tests via ctest          # 11 headless tests (cli/*-test.cpp)
+└── tests via ctest          # 12 headless tests (cli/*-test.cpp)
 ```
 
 Threading: dedicated audio callback → lock-free ring buffer → **decoder thread**

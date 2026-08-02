@@ -240,6 +240,27 @@ Runs once per 2205-sample (100 ms) block:
    only the very first lock of a stream still searches a whole line.
    Regression fixture + test: `jmh-phasing-16k.wav`,
    `cli/phasing-test.cpp`.
+   **Extended 2026-08-02 (S26).** Confining re-acquisition is right when
+   the sync position has not moved, but real transmissions do move it:
+   measured directly off the video, the 12 kHz off-air recording steps
+   **2131 → 1969 in one line** and holds the new position for the rest of
+   the reception — ten such steps, all ≈ −162 samples, which is what a
+   networked SDR's clock-slip correction leaves behind — and
+   `jmh sample.wav` steps at line 930 where a new transmission starts.
+   These are further than the shape check (±`SyncWidth`) or the fallback
+   (±`syn`/2) can reach, so the decoder crawled toward them over a dozen
+   lines. Since step 10 rotates the sync edge to index 0 — the seam where
+   a line wraps — a phase error does not shift such a line but **splits**
+   the sync strip across its two ends, which is what made those lines
+   unreadable. Our departure from the original here is `sync_step_lock()`
+   (`core/syncscan.h`): a whole-line search accepted only when the pulse
+   is unambiguous *and* the **next** line agrees with it, i.e. one line of
+   lookahead. The original has no equivalent — it rejects any fallback
+   position further than `SyncWidth` from the previous one, which we
+   measured and cannot use (mis-phased picture lines 36 → 211 on the
+   off-air recording, because it rejects the real steps too).
+   See `DEVIATIONS.md` #16; regression fixture + test:
+   `jmh-slew-12k.wav`, `cli/slew-test.cpp`.
 9. **Slant meter**: `drift = ((syncPos − prevSyncPos) + drift) * 0.5` EMA;
    |drift| ≤ 1 → green/yellow "locked" LED, else red (LEDs are recolored
    TProgressBars, via `sub_47F044`).

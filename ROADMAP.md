@@ -393,6 +393,44 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.4.0 — follow real steps in the sync position (S26):** the
+  user reported that whenever the **Sync corr** LED lit, the black sync
+  strip stopped being one solid bar — half stayed at one end of the line
+  and half appeared at the other, and those lines were unreadable. The
+  strip is rotated to index 0, the seam where a line wraps, so a phase
+  error of N samples does not shift a line: it **splits** the strip,
+  putting N samples of black at the far end. 22 of the 23 line-to-line
+  phase jumps over 20 px on the off-air recording were on a Sync corr line.
+  The cause was not noise. Reading the true sync position straight off the
+  video shows it stepping 2131 → 1969 in **one line** and holding the new
+  position for the rest of the reception — a real discontinuity, 162
+  samples, further than either the shape check (±`MaxJump` = 20) or the
+  fallback (±`syn`/2 = 80) can reach; `jmh sample.wav` does the same at
+  line 930 where a new transmission starts. Every previous behaviour
+  crawled toward it over a dozen lines, splitting the strip on each.
+  `sync_step_lock()` follows it on the line it starts on: the darkest
+  `syn` window in the **whole** line, taken only when the pulse is
+  unambiguous (nearest rival ≥ 300 samples away and ≥ `DarkThreshold`/2
+  brighter, sitting in a 100..400-sample dark run) and the **next** line
+  agrees — one line of lookahead. `sync_slew()` rate-limits everything
+  that is not a confirmed step. Both are inline in `core/syncscan.h`,
+  shared by `scan_lines()` and `LiveScan` so the two cannot drift.
+  Rejecting far results outright, which is what the original does, was
+  measured and is unusable: it raised mis-phased picture lines on the
+  off-air recording from 36 to 211, because it rejects the real steps too.
+  Results — line pairs moving the strip more than 5 px: `jmh sample.wav`
+  129 → 101, off-air **56 → 6**, the new fixture **16 → 2**; mis-phased
+  picture lines off-air **36 → 9**, lines locked 1747 → 1803.
+  Two costs, both deliberate: half a second of live latency (a completed
+  line is held until the next arrives) and `LiveScan::finish()` plus its
+  thread-safe `request_finish()`, without which a reception's image ended
+  one line short. CI caught a regression the dev machine structurally
+  could not — `manual-sync-test` silently changes fixture depending on
+  whether the gitignored full sample is present, and on the committed
+  excerpt the whole-line search walked off the position the user had
+  pointed at, which is the one thing that feature exists to override.
+  ctest 11 → 12 (`slew-test`), fourth fixture `jmh-slew-12k.wav`.
+
   **Released v1.3.0 — sync robustness + the original's fallback tracker
   (S25):** a third user-supplied recording (16 kHz, two back-to-back
   HIMAWARI IR charts, the first with a full transmission preamble) decoded

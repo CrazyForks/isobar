@@ -52,7 +52,7 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (packaging & cross-platform CI) done — v1.3.0
+workflow is complete; M6 (packaging & cross-platform CI) done — v1.4.0
 released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
@@ -68,10 +68,11 @@ at 16 kHz of two back-to-back HIMAWARI IR charts (added v1.3.0): the only
 fixture containing a full transmission preamble — ~33 s of all-dark phasing
 lines between two pictures — which is the case that exposed the v1.3.0 phase
 runaway (`phasing-test`). `jmh-slew-12k.wav` is a second 60 s cut of the same
-12 kHz off-air recording, from 50..110 s instead of the opening minute: the
-only fixture taken from a stretch where the shape check keeps failing, so the
-fallback runs constantly and the sync strip's stability under it can be
-measured (`slew-test`).
+12 kHz off-air recording, from 50..110 s instead of the opening minute
+(added v1.4.0): the only fixture containing a genuine **step** in the sync
+position — it moves 2131 → 1969 in one line and holds there, which is what a
+networked SDR's clock-slip correction leaves behind — and so the only one
+that measures whether the sync strip stays solid across it (`slew-test`).
 
 ## How the next contributor should use this
 

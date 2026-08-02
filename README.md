@@ -56,6 +56,30 @@ To build from source instead, see [Build](#build).
   palettes, BMP export, print.
 - **KG-FAX interop**: round-trips `.syn` files (including the radix-255
   line-count encoding and palette mode/invert bits in the header).
+- **Survives audio dropouts**, which matters if you feed it a networked
+  SDR (KiwiSDR and friends) over a long internet path — see below.
+
+### Networked SDRs and audio dropouts
+
+An internet-fed SDR loses audio when the stream stalls, and every lost
+chunk shifts the sync position for everything after it. Isobar follows
+that shift on the line it happens on, so **the size of a dropout barely
+matters**: measured by injecting gaps into a real off-air recording, a
+*ten-second* outage costs no damaged lines at all — you lose the ten
+seconds of chart it swallowed and nothing more.
+
+What does matter is how *often* they happen, and the limit is the
+`LockAfter` setting (Details… dialog, default **5**): acquiring sync needs
+that many consecutive undisturbed line periods, i.e. 2.5 seconds of clean
+audio. At the default, one dropout every 3 seconds is fine (5% of lines
+damaged); one every 2 seconds and it never locks at all.
+
+**If your feed drops out more often than that, lower `LockAfter` to 1–3.**
+It costs nothing on clean audio — 5, 3 and 2 all decode a good recording
+identically — and it turns the one-dropout-every-2-seconds case from
+unusable into 5% of lines damaged. The longer chain exists to stop false
+locks on *noisy* HF; a networked SDR feed is the opposite problem, clean
+but gappy, so it can afford a short one.
 
 ## Build
 
@@ -113,7 +137,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.3.0 released** — working software. All core receive features are
+**v1.4.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
 Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —
