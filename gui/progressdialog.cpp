@@ -61,6 +61,6 @@ void ProgressScope::update(double fraction)
     ProgressWin *pw = (ProgressWin *)win;
     if (fraction < 0) fraction = 0;
     if (fraction > 1) fraction = 1;
-    pw->bar->value(fraction);
+    pw->bar->value((float)fraction);   /* Fl_Progress takes float (C4244) */
     Fl::check();   /* keep the window responsive + repainted */
 }

@@ -1,22 +1,22 @@
 /* bmpfile.cpp - see bmpfile.h */
 #include "bmpfile.h"
 
-#include <cstdio>
+#include <fstream>
 #include <stdexcept>
 #include <vector>
 
-static void put16(FILE *f, unsigned v)
+static void put16(std::ostream &f, unsigned v)
 {
-    fputc(v & 0xff, f);
-    fputc((v >> 8) & 0xff, f);
+    f.put((char)(v & 0xff));
+    f.put((char)((v >> 8) & 0xff));
 }
 
-static void put32(FILE *f, unsigned long v)
+static void put32(std::ostream &f, unsigned long v)
 {
-    fputc(v & 0xff, f);
-    fputc((v >> 8) & 0xff, f);
-    fputc((v >> 16) & 0xff, f);
-    fputc((v >> 24) & 0xff, f);
+    f.put((char)(v & 0xff));
+    f.put((char)((v >> 8) & 0xff));
+    f.put((char)((v >> 16) & 0xff));
+    f.put((char)((v >> 24) & 0xff));
 }
 
 void bmp_write(const std::string &path, const uint8_t *rgb, int w, int h)
@@ -28,13 +28,13 @@ void bmp_write(const std::string &path, const uint8_t *rgb, int w, int h)
     int stride = (w * 3 + 3) & ~3;
     std::vector<uint8_t> row(stride);
 
-    FILE *f = fopen(path.c_str(), "wb");
+    std::ofstream f(path.c_str(), std::ios::binary);
     if (!f)
         throw std::runtime_error("bmp_write: cannot create " + path);
 
     unsigned long img_bytes = (unsigned long)stride * h;
     /* BITMAPFILEHEADER (14) + BITMAPINFOHEADER (40) */
-    fwrite("BM", 1, 2, f);
+    f.write("BM", 2);
     put32(f, 54 + img_bytes);   /* file size          */
     put32(f, 0);                /* reserved           */
     put32(f, 54);               /* pixel data offset  */
@@ -57,10 +57,9 @@ void bmp_write(const std::string &path, const uint8_t *rgb, int w, int h)
             row[3 * x + 1] = src[3 * x + 1];   /* G */
             row[3 * x + 2] = src[3 * x];       /* R */
         }
-        if (fwrite(row.data(), 1, stride, f) != (size_t)stride) {
-            fclose(f);
+        if (!f.write((const char *)row.data(), stride))
             throw std::runtime_error("bmp_write: write failed");
-        }
     }
-    fclose(f);
+    if (!f)
+        throw std::runtime_error("bmp_write: write failed");
 }

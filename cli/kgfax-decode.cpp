@@ -14,6 +14,7 @@
 #include "../core/synfile.h"
 
 #include <cstdio>
+#include <fstream>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -77,15 +78,19 @@ int main(int argc, char **argv)
         if (want_syn) {
             syn_write(out, img);
         } else {
-            FILE *fp = fopen(out_path, "wb");
-            if (!fp) {
+            std::ofstream f(out_path, std::ios::binary);
+            if (!f) {
                 fprintf(stderr, "error: cannot write '%s'\n", out_path);
                 return 1;
             }
-            fprintf(fp, "P5\n%d %zu\n255\n", FaxImage::WIDTH, img.lines.size());
+            f << "P5\n" << FaxImage::WIDTH << " " << img.lines.size()
+              << "\n255\n";
             for (auto &line : img.lines)
-                fwrite(line.data(), 1, line.size(), fp);
-            fclose(fp);
+                f.write((const char *)line.data(), (std::streamsize)line.size());
+            if (!f) {
+                fprintf(stderr, "error: cannot write '%s'\n", out_path);
+                return 1;
+            }
         }
         fprintf(stderr, "wrote %s (%d x %zu)\n", out_path,
                 FaxImage::WIDTH, img.lines.size());

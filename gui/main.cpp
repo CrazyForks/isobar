@@ -134,7 +134,19 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <iostream>
+
+/* localtime() is not thread-safe and MSVC deprecates it (C4996). The
+ * reentrant replacement is spelled differently on Windows. */
+static bool local_time(const time_t *t, struct tm *out)
+{
+#ifdef _WIN32
+    return localtime_s(out, t) == 0;
+#else
+    return localtime_r(t, out) != 0;
+#endif
+}
 
 /* LED colors */
 static const Fl_Color LED_OFF  = fl_rgb_color(110, 110, 110);
@@ -180,12 +192,15 @@ struct AppState {
 /* Window title doubles as the status line for now (dev aid). */
 static void set_title(AppState *app, const char *suffix)
 {
-    char buf[160];
-    if (suffix && suffix[0])
-        snprintf(buf, sizeof buf, "Isobar - %s", suffix);
-    else
-        snprintf(buf, sizeof buf, "Isobar");
-    app->win->copy_label(buf);
+    /* std::string rather than a fixed buffer: the suffix is caller-built
+     * (file paths, decode status) and gcc rightly warned that it could be
+     * truncated into 160 bytes. copy_label() takes its own copy. */
+    std::string title = "Isobar";
+    if (suffix && suffix[0]) {
+        title += " - ";
+        title += suffix;
+    }
+    app->win->copy_label(title.c_str());
 }
 
 static void set_led(Fl_Box *led, Fl_Color c)
@@ -1104,8 +1119,11 @@ static void auto_save(AppState *app)
     if (app->image.lines.empty())
         return;
     time_t t = time(0);
+    struct tm lt;
+    if (!local_time(&t, &lt))
+        return;
     char stem[32];
-    strftime(stem, sizeof stem, "%Y%m%d%H%M", localtime(&t));
+    strftime(stem, sizeof stem, "%Y%m%d%H%M", &lt);
     std::string dir = app->settings.dirname;
     if (dir.empty())
         dir = exe_dir();   /* the original has no fallback (DirName +
@@ -1686,13 +1704,13 @@ int main(int argc, char **argv)
                     a->recording ? "on" : "off",
                     a->image.lines.size(), rms);
             /* keep the received image for inspection */
-            FILE *fp = fopen("/tmp/live-test.pgm", "wb");
-            if (fp) {
-                fprintf(fp, "P5\n%d %zu\n255\n", FaxImage::WIDTH,
-                        a->image.lines.size());
+            std::ofstream pgm("/tmp/live-test.pgm", std::ios::binary);
+            if (pgm) {
+                pgm << "P5\n" << FaxImage::WIDTH << " "
+                    << a->image.lines.size() << "\n255\n";
                 for (auto &ln : a->image.lines)
-                    fwrite(ln.data(), 1, ln.size(), fp);
-                fclose(fp);
+                    pgm.write((const char *)ln.data(),
+                              (std::streamsize)ln.size());
             }
             cb_quit(0, a);
         }, &app);
