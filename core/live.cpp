@@ -101,11 +101,31 @@ long LiveScan::try_lock(long grid)
     long finalized = (long)buf.size() - p.max_pulse - 1;
     int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
 
+    /* Allowed neighbourhood for the chain start; mirrors syncscan's
+     * find_lock (the two must stay byte-identical - live-test). Before
+     * the first lock the whole line is searched; afterwards only the
+     * fallback's neighbourhood around the expected phase, so an
+     * all-dark preamble cannot make the phase run away. */
+    long lo = grid, hi = grid + LINE_SAMPLES - 1;
+    if (ever_locked && p.fallback_win > 0) {
+        long expected = grid + phi;
+        if (expected - p.fallback_win / 2 > lo)
+            lo = expected - p.fallback_win / 2;
+        if (expected + p.fallback_win / 2 < hi)
+            hi = expected + p.fallback_win / 2;
+    }
+
     for (size_t i = 0; i < edges.size(); i++) {
         if (edges[i] < lock_from)
             continue;
         if (edges[i] >= grid + LINE_SAMPLES)
             return -2;            /* chain start beyond this window */
+        if (edges[i] < lo || edges[i] > hi)
+            continue;             /* outside the allowed neighbourhood
+                                     (this also drops edges from an
+                                     earlier line: release leaves
+                                     lock_from at the last shape edge,
+                                     which may be several lines back) */
         long cur = edges[i];
         int links = 0;
         bool broken = false, waiting = false;

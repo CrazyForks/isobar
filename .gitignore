@@ -45,6 +45,13 @@ jmh sample.wav
 # measured against; keep the full file locally for deeper testing.
 HDSDR_20260801_032125Z_13987kHz_AF.wav
 
+# Full 18.8-minute 16 kHz recording of two back-to-back JMH HIMAWARI IR
+# charts (36 MB), supplied 2026-08-02. Same reasoning as above: the
+# 90-second excerpt jmh-phasing-16k.wav is committed instead and is what CI
+# runs against. It is the recording that exposed the phase-runaway bug the
+# excerpt now guards (cli/phasing-test.cpp); keep the full file locally.
+FAXSignal.wav
+
 # Stray source video (an internet recording used for early hand-tests;
 # unreferenced by any code or doc).
 videoplayback.mp4

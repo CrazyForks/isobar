@@ -22,6 +22,14 @@ rewrite to the original's fixed 4000-sample grid cadence).
 - ✅ Sync fallback: min-brightness search + lock/release hysteresis
   (`ctest -R fallback-test`; regenerated reference out.pgm — fallback-region
   lines now land on corrected positions)
+- ✅ Phase runaway fixed (S25): re-acquisition after a release could pick a
+  sync edge from an earlier line (negative rotation offset) or, anywhere in
+  the 4000-sample line, a dark feature in the picture — shifting the image
+  sideways by up to 3200 samples for tens of lines. Both paths are now
+  bounded to the fallback's neighbourhood around the phase already held,
+  which is also what the original does (it never re-searches a whole line
+  once locked). `ctest -R phasing-test`; the two older fixtures decode
+  byte-identically
 - ✅ 300/450 Hz tone detection (resonators on the video stream, threshold
   calibrated on the sample's real start/stop tones; `ctest -R tone-test`;
   drives the Control LED — flashes by too fast to eyeball on file decode,
@@ -205,7 +213,12 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      `core/resample.cpp` in the WAV reader, and the only one weak enough
      to drive the fallback sync correction (96 locked / 24 corrected /
      1 relock). Both are float-heavy paths that CI now checks on x86_64
-     and aarch64 alike (`offair-test`); stale `make`/`Makefile` refs fixed
+     and aarch64 alike (`offair-test`). **S25 added a third fixture**,
+     `jmh-phasing-16k.wav` (2.9 MB, 90 s of a 16 kHz recording of two
+     back-to-back HIMAWARI IR charts): the only sample containing a full
+     transmission preamble — ~33 s of all-dark phasing lines between two
+     pictures — which is what exposed the phase-runaway bug fixed in S25
+     (`phasing-test`). Stale `make`/`Makefile` refs fixed
      across all docs;
      root `README.md` written (GitHub landing page).
   1. ✅ **CMake migration** (S11) — `CMakeLists.txt` replaces the Makefile;

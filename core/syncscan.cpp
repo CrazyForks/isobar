@@ -71,10 +71,14 @@ std::vector<long> find_sync_edges(const std::vector<int> &sm,
  * RReSycn - NOT LReSycn, which is the release counter; docs/01
  * sec. 3.2(8)). Returns edges.size() if none. */
 size_t find_lock(const std::vector<long> &edges, size_t from,
-                 const SyncParams &p)
+                 long lo, long hi, long win_end, const SyncParams &p)
 {
     int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
     for (size_t i = from; i + 1 < edges.size(); i++) {
+        if (edges[i] >= win_end)
+            break;              /* chain start beyond this line window */
+        if (edges[i] < lo || edges[i] > hi)
+            continue;           /* outside the allowed neighbourhood */
         long cur = edges[i];
         int links = 0;
         for (size_t j = i + 1; j < edges.size(); j++) {
@@ -181,11 +185,34 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
             if (!locked) {
                 /* lock acquisition: junk-tolerant chain of valid
                  * periods; the chain start must lie in this window,
-                 * otherwise wait for the next line */
-                size_t nl = find_lock(edges, lock_from, p);
-                if (nl < edges.size() && edges[nl] < grid + LINE_SAMPLES) {
+                 * otherwise wait for the next line.
+                 * Skip edges before the window first: after a release
+                 * lock_from sits at the last shape edge, which may be
+                 * several lines back, and an edge from an earlier line
+                 * would give a phase that does not describe this one. */
+                while (lock_from < edges.size() && edges[lock_from] < grid)
+                    lock_from++;
+                /* Re-acquisition after a release may only land near the
+                 * phase we already had: a transmission's sync position
+                 * does not move, only its quality does. Without this,
+                 * a preamble of all-dark lines (no dark RUN, so no edge)
+                 * releases the lock, and the full-window search then
+                 * re-locks onto a dark feature in the picture - shifting
+                 * the image sideways for tens of lines. Same
+                 * neighbourhood the fallback search uses. The first lock
+                 * of the stream still searches the whole line. */
+                long lo = grid, hi = grid + LINE_SAMPLES - 1;
+                if (ever_locked && p.fallback_win > 0) {
+                    if (expected - p.fallback_win / 2 > lo)
+                        lo = expected - p.fallback_win / 2;
+                    if (expected + p.fallback_win / 2 < hi)
+                        hi = expected + p.fallback_win / 2;
+                }
+                size_t nl = find_lock(edges, lock_from, lo, hi,
+                                      grid + LINE_SAMPLES, p);
+                if (nl < edges.size()) {
                     long E = edges[nl];
-                    phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    phi = (E - grid) % LINE_SAMPLES;
                     last_shape = E;
                     if (ever_locked)
                         img.relocks++;   /* re-acquire after release */

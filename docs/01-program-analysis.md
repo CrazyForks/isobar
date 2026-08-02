@@ -158,6 +158,25 @@ Runs once per 2205-sample (100 ms) block:
    - **`LReSycn`** — consecutive *invalid* lines before the lock is dropped.
 
    These two are easy to swap; `LReSycn` releases and `RReSycn` acquires.
+
+   **The search window never widens back out.** Once the original has
+   locked, both its shape check and this fallback look only near the
+   previous sync position; there is no "start over and scan the whole
+   line" path. Losing lock drops the LED and the ever-locked flag, not the
+   search window. The port had added such a path (its own lock-acquisition
+   step, which scans a full 4000-sample line for a chain of valid
+   periods), and on a real transmission preamble it backfired: ~33 s of
+   all-dark phasing lines contain no dark RUN of 100..400 samples (the
+   whole line is one 4000-sample run), so no edge is found, the fallback
+   finds no dip either, and after `LReSycn` lines the lock is released —
+   whereupon the full-line search re-locks onto a dark feature in the
+   picture and rotates the image sideways by up to 3200 samples for tens
+   of lines, while the true sync position had not moved at all. Fixed
+   2026-08-02 (S25) by bounding re-acquisition to the same neighbourhood
+   the fallback uses, in both `core/syncscan.cpp` and `core/live.cpp`;
+   only the very first lock of a stream still searches a whole line.
+   Regression fixture + test: `jmh-phasing-16k.wav`,
+   `cli/phasing-test.cpp`.
 9. **Slant meter**: `drift = ((syncPos − prevSyncPos) + drift) * 0.5` EMA;
    |drift| ≤ 1 → green/yellow "locked" LED, else red (LEDs are recolored
    TProgressBars, via `sub_47F044`).
