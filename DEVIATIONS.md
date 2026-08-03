@@ -99,6 +99,33 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     Line-to-line strip movement over 10 px, on the three full recordings:
     `jmh sample` 54→13, `FAXSignal` 25→18, off-air **56→8**; mis-phased
     picture lines off-air **36→9**. Guarded by `slew-test`.
+    **A picture-heavy image needs absolute darkness, not position or
+    relative contrast, to tell a sync pulse from the picture** (added
+    2026-08-03 for a KiwiSDR himawari reception; `sync_dark_floor()` =
+    `DarkThreshold`/3, applied to the lock chain's start, to the whole-line
+    rescue as an alternative to its rival-margin test, and to the dip-depth
+    fallback before it may slew the phase). Cloud edges repeat line to line
+    closely enough to sustain a lock chain of their own, and the edge list
+    is in position order, so a picture chain earlier in the line beat the
+    real pulse: the decoder locked 339 samples off on its first lock and
+    could not recover, since re-acquisition is confined to the phase it
+    already holds. The original has no equivalent test — its own detector
+    never sees a picture line at all (it is a phasing-preamble detector, as
+    above), so the question does not arise for it.
+    **The line phase is anchored on the darkest window of the sync pulse,
+    not on its leading edge** (added 2026-08-03; `sync_anchor()` in
+    `core/syncscan.h`, applied at every point where a detected position
+    becomes the phase, in both the batch and live paths). The original — and
+    every detector here until now — publishes the one sample where the video
+    first crosses `DarkThreshold`. That sample moves with noise and with
+    whatever picture abuts the pulse; the whole pulse is far bigger
+    evidence, and a window as wide as the pulse straddles both its edges, so
+    their noise partly cancels. Measured line-to-line wobble of the same
+    pulses: leading edge median 2.2 samples / 90th percentile 42.2 on the
+    himawari reception, darkest window **0.8 / 3.8**. It is bounded so it
+    can never wrap the strip (see the header comment); where the pulse
+    cannot be seen whole — a chart's black margin merged with it — the
+    published position stands and behaviour is exactly as before.
 7. **Tone detectors run on the 8000 S/s video stream**, not on the
    22050 Hz demod signal before decimation (docs/01 §3.2(5)). The
    300/450 Hz tones pass the decimation unchanged, so detection is

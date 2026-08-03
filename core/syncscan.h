@@ -141,6 +141,103 @@ inline int sync_run_mean(const std::vector<int> &sm, long pos,
     return (int)(s / (hi - lo + 1));
 }
 
+/* Refine a sync position from the dark run's leading edge to the steadiest
+ * point of the pulse. Shared by scan_lines and LiveScan (live-test).
+ *
+ * Every detector here publishes the same thing: the first sample where the
+ * 8-sample moving average crosses dark_th. That is ONE sample, and it moves
+ * with noise and with whatever picture abuts the pulse - which is the
+ * per-line wobble still left in the image after the S27 fixes, and what the
+ * eye reads as a ragged baseline. The pulse as a whole is far bigger
+ * evidence. Line-to-line wobble of the same pulses, de-trended so the
+ * transmission's own drift is not counted as jitter:
+ *
+ *   anchor           off-air 12k (rms/median/90%)   himawari (median/90%)
+ *   run start           4.18 / 1.0 / 3.0               2.2 / 42.2
+ *   run centre          2.65 / 0.5 / 2.5               1.3 / 21.8
+ *   darkest window      0.95 / 1.0 / 2.0               0.8 /  3.8
+ *   matched step edge   1.65 / 1.0 / 2.0               1.8 / 37.2
+ *
+ * So: the start of the darkest fallback_win-wide window. A JMH sync pulse
+ * is ~158 samples against the 160 default, so the window has to straddle
+ * both of the run's edges to find its minimum - which makes the result a
+ * darkness-weighted CENTRE estimate, with the noise on the two edges partly
+ * cancelling. A leading-edge estimator cannot do that however much it
+ * averages (the matched step above, 50 and 80 samples either side), because
+ * on a photo the picture abutting the pulse moves the edge itself.
+ *
+ * Three bounds keep it honest, all of them about black wider than a pulse -
+ * a chart's margin merged with the sync (FAXSignal: 328-sample runs), a
+ * black band in a satellite photo:
+ *   - the dark run may be at most 2*win wide, else there is no pulse shape
+ *     to centre on;
+ *   - the minimum must be a real dip and not a tie - inside flat black
+ *     every window position is equally dark and the argmin lands
+ *     arbitrarily (on FAXSignal that moved the phase 418 samples on a
+ *     single line). So the minimum plateau, at 2 grey levels' tolerance,
+ *     must be narrower than win/4 and must not touch either end of the
+ *     search - a minimum at the boundary means the true one is outside it.
+ *     Where it does qualify, the plateau's CENTRE is the anchor, which
+ *     removes what little tie is left;
+ *   - and the anchor may move at most win/2 from the position published.
+ * A move that big does not merely shift the image, it wraps the leading
+ * part of the strip to the far end of the line - the split strip of S26.
+ *
+ * Positions with no dark run (a coasted prediction, the video's end) and
+ * anything failing those tests come back unchanged, so every path that
+ * cannot be improved behaves exactly as it did before. */
+inline long sync_anchor(const std::vector<int> &sm, long pos,
+                        const SyncParams &p)
+{
+    long n = (long)sm.size();
+    long win = p.fallback_win > 0 ? p.fallback_win : 160;
+    long probe = pos + p.min_pulse / 2;
+    if (pos < 0 || probe >= n || sm[probe] >= p.dark_th)
+        return pos;
+
+    /* the dark run around the probe, and out if it is too wide to be one
+     * pulse (walked no further than the bound, so this stays cheap) */
+    long runmax = 2 * win;
+    long lo = probe, hi = probe;
+    while (lo > 0 && sm[lo - 1] < p.dark_th && probe - lo <= runmax)
+        lo--;
+    while (hi + 1 < n && sm[hi + 1] < p.dark_th && hi - probe <= runmax)
+        hi++;
+    if (hi - lo + 1 > runmax)
+        return pos;
+
+    /* mean brightness of a win-wide window at every position within win/2
+     * of pos (kept as a sum: the comparisons below scale with it) */
+    long qlo = pos - win / 2, qhi = pos + win / 2;
+    if (qlo < 0) qlo = 0;
+    if (qhi > n - win) qhi = n - win;
+    if (qlo >= qhi)
+        return pos;
+    std::vector<long> s((size_t)(qhi - qlo + 1));
+    long sum = 0;
+    for (long i = qlo; i < qlo + win; i++)
+        sum += sm[i];
+    s[0] = sum;
+    long best = sum;
+    for (long q = qlo + 1; q <= qhi; q++) {
+        sum += sm[q + win - 1] - sm[q - 1];
+        s[(size_t)(q - qlo)] = sum;
+        if (sum < best)
+            best = sum;
+    }
+
+    long first = -1, last = -1;
+    for (long q = qlo; q <= qhi; q++)
+        if (s[(size_t)(q - qlo)] <= best + 2 * win) {   /* 2 grey levels */
+            if (first < 0)
+                first = q;
+            last = q;
+        }
+    if (last - first > win / 4 || first == qlo || last == qhi)
+        return pos;
+    return (first + last) / 2;
+}
+
 /* The one unambiguous sync pulse in a line, or -1 if there isn't one.
  *
  * Darkest fallback_win window anywhere in the line, accepted only if it

@@ -312,7 +312,8 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                                       grid + LINE_SAMPLES, p);
                 if (nl < edges.size()) {
                     long E = edges[nl];
-                    phi = (E - grid) % LINE_SAMPLES;
+                    phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
+                          % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
                     last_shape = E;
@@ -333,22 +334,35 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                  * edge position (grid+phi), which stays ~4000 even
                  * across fallback/coast lines. */
                 long prev_edge = grid - LINE_SAMPLES + phi;
-                while (ei < edges.size() &&
-                       edges[ei] < expected - p.search_win)
+                /* The window is judged on the ANCHOR, not on the raw edge
+                 * the detector published: the prediction is an anchor, and
+                 * comparing it against a leading edge shifts the +-search_win
+                 * window by the gap between the two - which cost 43 shape
+                 * locks and tripled the relocks on the himawari recording
+                 * when the anchor went in. So bracket generously on raw
+                 * position (an anchor sits within win/2 of its own edge) and
+                 * test the anchor itself. */
+                long bracket = p.search_win +
+                               (p.fallback_win > 0 ? p.fallback_win : 160) / 2;
+                while (ei < edges.size() && edges[ei] < expected - bracket)
                     ei++;
-                if (ei < edges.size() &&
-                    edges[ei] <= expected + p.search_win) {
-                    long E = edges[ei];
+                for (size_t k = ei;
+                     k < edges.size() && edges[k] <= expected + bracket; k++) {
+                    long E = sync_anchor(sm, edges[k], p);
+                    if (E < expected - p.search_win ||
+                        E > expected + p.search_win)
+                        continue;
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
-                        last_shape = E;
+                        last_shape = edges[k];   /* raw: indexes `edges` */
                         miss = 0;
                         since_shape = 0;
                         how = 0;
                     }
+                    break;
                 }
             }
 
@@ -413,6 +427,12 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                         fb = -1;
                 }
                 if (fb >= 0) {
+                    /* one reference for every path (sync_anchor) - a
+                     * fallback result published at the run's leading edge
+                     * and a shape lock published at the darkest window
+                     * would otherwise tear the strip whenever tracking
+                     * switched between them */
+                    fb = sync_anchor(sm, fb, p);
                     long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     /* a confirmed step is taken whole; anything else is
                      * rate-limited (see sync_slew) */
