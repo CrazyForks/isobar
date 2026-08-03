@@ -25,6 +25,10 @@
 
 #include <vector>
 #include <cstdint>
+#include <cstddef>   /* size_t — older libstdc++ doesn't leak it via <vector>,
+                      * so gcc-11 (ubuntu-22.04-arm) rejects the unqualified
+                      * uses in sync_anchor below. Same fix the .cpp files
+                      * needed in v1.1.1; the header grew its own in v1.5.0. */
 
 struct FaxImage {
     static const int WIDTH = 1500;     /* pixels per line                   */

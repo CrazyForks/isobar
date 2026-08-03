@@ -1,4 +1,5 @@
-/* wavrate-test - core/wavfile.cpp accepts any sample rate.
+/* wavrate-test - core/wavfile.cpp accepts any sample rate, and PCM however
+ * the fmt chunk spells it.
  * Registered with ctest; run via `ctest --test-dir build -R wavrate-test`.
  *
  * The reader used to accept only 22050 and 44100 Hz, which rejected most
@@ -8,6 +9,11 @@
  *
  * Each case writes a real WAV of a known tone, reads it back, and checks
  * the length and that the tone survived at the right frequency.
+ *
+ * The last case covers WAVE_FORMAT_EXTENSIBLE (tag 0xFFFE), which macOS
+ * `afconvert -f WAVE` emits for any source with a channel layout — every
+ * .m4a, so every phone recording converted for this project. The reader
+ * used to reject those as "not PCM" even though the samples are plain PCM.
  */
 #include "../core/wavfile.h"
 
@@ -40,24 +46,41 @@ static void put_u16(std::vector<uint8_t> &v, uint16_t x)
     v.push_back((uint8_t)(x & 0xFF)); v.push_back((uint8_t)(x >> 8 & 0xFF));
 }
 
-/* 16-bit mono WAV holding `secs` of a `freq` Hz sine at `rate` Hz. */
+/* 16-bit mono WAV holding `secs` of a `freq` Hz sine at `rate` Hz.
+ *
+ * With `extensible`, the fmt chunk is written the way macOS `afconvert
+ * -f WAVE` writes it for any source carrying a channel layout: 40 bytes,
+ * tag 0xFFFE, and the real format tag buried in the SubFormat GUID. The
+ * samples are identical either way, so both spellings must decode alike. */
 static bool write_tone(const std::string &path, uint32_t rate, double freq,
-                       double secs)
+                       double secs, bool extensible = false)
 {
     uint32_t frames = (uint32_t)(rate * secs);
+    uint32_t fmt_size = extensible ? 40 : 16;
     std::vector<uint8_t> d;
-    d.reserve(44 + frames * 2);
+    d.reserve(28 + fmt_size + frames * 2);
     const char *riff = "RIFF", *wave = "WAVEfmt ", *data = "data";
     d.insert(d.end(), riff, riff + 4);
-    put_u32(d, 36 + frames * 2);
+    put_u32(d, 20 + fmt_size + frames * 2);
     d.insert(d.end(), wave, wave + 8);
-    put_u32(d, 16);                 /* fmt chunk size  */
-    put_u16(d, 1);                  /* PCM             */
+    put_u32(d, fmt_size);
+    put_u16(d, extensible ? 0xFFFE : 1);
     put_u16(d, 1);                  /* mono            */
     put_u32(d, rate);
     put_u32(d, rate * 2);           /* byte rate       */
     put_u16(d, 2);                  /* block align     */
     put_u16(d, 16);                 /* bits            */
+    if (extensible) {
+        put_u16(d, 22);             /* cbSize                    */
+        put_u16(d, 16);             /* valid bits per sample     */
+        put_u32(d, 0x4);            /* channel mask: front centre */
+        put_u16(d, 1);              /* SubFormat = PCM ...        */
+        static const uint8_t ks_suffix[14] = {   /* ... + the fixed tail */
+            0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
+            0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71
+        };
+        d.insert(d.end(), ks_suffix, ks_suffix + 14);
+    }
     d.insert(d.end(), data, data + 4);
     put_u32(d, frames * 2);
     for (uint32_t i = 0; i < frames; i++) {
@@ -129,6 +152,56 @@ int main()
         printf("  %5u Hz -> %6zu samples, tone %.0f Hz   [%s]\n",
                rate, out.size(), got, info.c_str());
         std::remove(path.c_str());
+    }
+
+    /* WAVE_FORMAT_EXTENSIBLE: same samples, fancier fmt chunk, so the
+     * decoded result must match the plain spelling to the last sample. */
+    {
+        std::string plain = tmp + "/isobar-wavfmt-plain.wav";
+        std::string ext   = tmp + "/isobar-wavfmt-ext.wav";
+        if (!write_tone(plain, 12000, TONE, SECS) ||
+            !write_tone(ext, 12000, TONE, SECS, true))
+            return fail("cannot write extensible test WAVs");
+
+        std::string info;
+        std::vector<double> a, b;
+        try {
+            a = wav_read_22050(plain, 0);
+            b = wav_read_22050(ext, &info);
+        } catch (const std::exception &e) {
+            printf("FAIL: extensible WAV rejected: %s\n", e.what());
+            return 1;
+        }
+        if (a != b) {
+            printf("FAIL: extensible decode differs (%zu vs %zu samples)\n",
+                   a.size(), b.size());
+            return 1;
+        }
+        printf("  extensible (0xFFFE) -> %6zu samples, identical   [%s]\n",
+               b.size(), info.c_str());
+
+        /* A SubFormat GUID that is not KSDATAFORMAT_SUBTYPE means the data
+         * is something we have not been told how to read: reject it rather
+         * than trust the two bytes that happen to sit at the front. */
+        std::fstream patch(ext.c_str(),
+                           std::ios::in | std::ios::out | std::ios::binary);
+        patch.seekp(46);            /* first byte of the GUID's fixed tail:
+                                     * 20 (fmt body) + 24 (GUID) + 2 (tag) */
+        patch.put(0x11);            /* any byte but the 0x00 that belongs
+                                     * there; kept under 0x80 so the cast to
+                                     * a signed char does not truncate
+                                     * (MSVC C4310) */
+        patch.close();
+        bool threw = false;
+        try {
+            wav_read_22050(ext, 0);
+        } catch (const std::exception &) {
+            threw = true;
+        }
+        std::remove(plain.c_str());
+        std::remove(ext.c_str());
+        if (!threw)
+            return fail("bad SubFormat GUID accepted; should be rejected");
     }
 
     /* Below the 6000 Hz floor there is no Nyquist room for the 2300 Hz

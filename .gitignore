@@ -54,6 +54,22 @@ HDSDR_20260801_032125Z_13987kHz_AF.wav
 # excerpt now guards (cli/phasing-test.cpp); keep the full file locally.
 FAXSignal.wav
 
+# KiwiSDR recordings of a JMH HIMAWARI IR chart and a test chart, taken
+# 2026-08-03 (the .m4a originals, ~42 MB, and their .wav conversions,
+# ~134 MB). Same reasoning as above: the 60-second excerpt
+# jmh-himawari-12k.wav (300..360 s of the himawari reception, resampled to
+# 12 kHz) is committed instead and is what CI runs against. That excerpt is
+# the only fixture whose video is a PHOTO rather than a chart, which is what
+# cli/satellite-test.cpp exists to guard; keep the full files locally.
+himawari.m4a
+test chart.m4a
+jmh-kiwi-himawari.wav
+jmh-kiwi-testchart.wav
+
+# Decoded output from those recordings (regenerable; see satellite-test).
+kiwi-*.pgm
+himawari-*.png
+
 # Stray source video (an internet recording used for early hand-tests;
 # unreferenced by any code or doc).
 videoplayback.mp4

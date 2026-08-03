@@ -38,6 +38,7 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
     uint32_t rate = 0;
     std::vector<uint8_t> raw;      /* interleaved 16-bit samples */
     uint16_t block_align = 0;
+    uint16_t tag = 0;              /* the fmt tag as written, for messages */
 
     for (;;) {
         uint8_t ch[8];
@@ -50,11 +51,33 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
                 throw std::runtime_error("truncated fmt chunk");
             if (size < 16)
                 throw std::runtime_error("bad fmt chunk");
-            format = rd_u16(buf.data() + 0);
+            format = tag = rd_u16(buf.data() + 0);
             channels = rd_u16(buf.data() + 2);
             rate = rd_u32(buf.data() + 4);
             block_align = rd_u16(buf.data() + 12);
             bits = rd_u16(buf.data() + 14);
+
+            /* WAVE_FORMAT_EXTENSIBLE (0xFFFE): the real format tag is the
+             * first two bytes of a 16-byte SubFormat GUID, whose remaining
+             * 14 bytes are the fixed KSDATAFORMAT_SUBTYPE suffix. macOS
+             * `afconvert -f WAVE` writes this whenever the source carries a
+             * channel layout (any .m4a, for one), so a perfectly ordinary
+             * 16-bit PCM file arrives tagged 0xFFFE. Layout after the 16
+             * common bytes: cbSize(2) validBits(2) channelMask(4) GUID(16). */
+            if (format == 0xFFFE) {
+                static const uint8_t ks_suffix[14] = {
+                    0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
+                    0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71
+                };
+                if (size < 40 || rd_u16(buf.data() + 16) < 22)
+                    throw std::runtime_error("WAVE_FORMAT_EXTENSIBLE fmt chunk "
+                                             "is too short to hold a SubFormat "
+                                             "GUID");
+                if (memcmp(buf.data() + 26, ks_suffix, 14) != 0)
+                    throw std::runtime_error("unrecognised SubFormat GUID in "
+                                             "WAVE_FORMAT_EXTENSIBLE fmt chunk");
+                format = rd_u16(buf.data() + 24);
+            }
             have_fmt = true;
         } else if (memcmp(ch, "data", 4) == 0) {
             raw.resize(size);
@@ -70,8 +93,16 @@ std::vector<double> wav_read_22050(const std::string &path, std::string *info_ou
 
     if (!have_fmt || !have_data)
         throw std::runtime_error("missing fmt or data chunk in '" + path + "'");
-    if (format != 1)
-        throw std::runtime_error("only uncompressed PCM WAV is supported");
+    if (format != 1) {
+        std::string what = "only uncompressed PCM WAV is supported (this file "
+                           "is format " + std::to_string(format);
+        if (tag == 0xFFFE)
+            what += ", inside WAVE_FORMAT_EXTENSIBLE";
+        what += format == 3 ? ", IEEE float; re-convert to 16-bit PCM, e.g. "
+                              "`afconvert -f WAVE -d LEI16 in.wav out.wav`)"
+                            : ")";
+        throw std::runtime_error(what);
+    }
     if (bits != 16)
         throw std::runtime_error("only 16-bit PCM WAV is supported");
     if (channels < 1 || block_align != channels * 2)

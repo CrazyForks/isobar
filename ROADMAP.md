@@ -269,9 +269,23 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      a second 60 s cut of the same 12 kHz off-air recording, 50..110 s):
      the stretch where that recording's sync position genuinely steps
      −162 samples, which is what a networked SDR's clock-slip correction
-     leaves behind (`slew-test`). Stale `make`/`Makefile` refs fixed
-     across all docs;
-     root `README.md` written (GitHub landing page).
+     leaves behind (`slew-test`). **S29 added a fifth**,
+     `jmh-himawari-12k.wav` (1.4 MB, 60 s at 300..360 s of a KiwiSDR
+     HIMAWARI IR reception, resampled to 12 kHz): the only fixture whose
+     video is a photo rather than a chart, so it is the only one where the
+     darkest thing on a line is usually cloud instead of the sync pulse.
+     That is what broke the tracker twice — S26's lock-onto-cloud and
+     S28's per-line phase wobble — and neither had a test until now.
+     Built against each of those commits, `satellite-test` reports 58 /
+     77 / 120 of 120 lines locked, so it fails loudly on either
+     regression. S29 also added `reacq-test`, which needs no fixture of its
+     own: it splices the demodulated video (dropping N samples mid-decode,
+     as a networked SDR's dropped buffer does) and requires the tracker to
+     re-phase. That closed the last open sync item — re-acquisition escapes
+     a bad phase via `sync_step_lock` on the line the step happens, and
+     `widen_after`, which S27/S28 suspected of never firing, turns out to be
+     reachable but redundant on every fixture. Stale `make`/`Makefile` refs
+     fixed across all docs; root `README.md` written (GitHub landing page).
   1. ✅ **CMake migration** (S11) — `CMakeLists.txt` replaces the Makefile;
      `isobar_core` lib + `isobar-decode`/`isobar-gui` + 7 ctest tests.
      FLTK via `fltk-config --use-images`, RtAudio via `pkg-config` (no
@@ -393,6 +407,50 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.5.0 — read the WAVs `afconvert` writes, and test the
+  satellite path at last (S29):** two gaps left open by v1.4.0, plus one
+  worry that turned out not to be a gap at all.
+  `core/wavfile.cpp` now accepts **`WAVE_FORMAT_EXTENSIBLE`** (fmt tag
+  `0xFFFE`): the real format tag lives in the first two bytes of the
+  SubFormat GUID, whose other 14 bytes are the fixed
+  `KSDATAFORMAT_SUBTYPE` suffix and are verified, so anything that is not
+  really PCM is still rejected. macOS `afconvert -f WAVE` writes that
+  header whenever the source carries a channel layout — every `.m4a`, so
+  every phone or KiwiSDR recording converted that way — and the samples
+  inside were ordinary 16-bit PCM all along. Only the label differed, and
+  the reader was checking the label. Rejection messages now name the
+  format found and, for IEEE float, the `afconvert` line to re-convert
+  with.
+  Two new tests, and a fifth fixture, `jmh-himawari-12k.wav` — 60 s of a
+  KiwiSDR HIMAWARI IR reception at 12 kHz, the first fixture whose video
+  is a **photo** rather than a chart. `satellite-test` guards the case
+  that had broken the tracker twice with nothing testing it (S26's
+  lock-onto-cloud, S28's per-line phase wobble); built against those two
+  commits it reports 58 and 77 of 120 lines locked against 120 now, so it
+  fails loudly on either. Because a locked line can still sit a few pixels
+  out — which is exactly what S28's bug did — it also cross-correlates
+  adjacent line pairs and counts those needing a shift over 3 px: 31
+  before `sync_anchor`, 1 after.
+  `reacq-test` closes the last open sync item, and closes it by
+  measurement rather than by code: S27 and S28 both suspected
+  re-acquisition could not escape a wrong phase because `widen_after` was
+  never reached. It **is** reached (49 lines of the full himawari
+  reception, 27 of `jmh-phasing-16k`) — but it is not what rescues the
+  tracker either. `sync_step_lock` is, on the line the step happens.
+  Splicing the demodulated video, as a networked SDR's dropped buffer
+  does: recovery from a 200/800/2000-sample step is immediate with or
+  without a dead stretch before it; with `sync_step_lock` removed 35 of 74
+  lines stay mis-phased, with both routes removed all 74. `widen_after` is
+  kept — it is the only way back when no unambiguous pulse can be found at
+  all, which no fixture covers — and `core/syncscan.cpp` now carries those
+  numbers so this is not re-opened from the same wrong premise.
+  ctest 12 → 14. CI housekeeping with it: the workflow actions were far
+  enough behind to be running on a deprecated Node (checkout v4 → v7,
+  upload-artifact v4 → v7, download-artifact v4 → v8, cache v4 → v6), and
+  the macOS dependency step now installs only what is missing, so
+  "already installed and up-to-date" stops burying real warnings. No
+  compiler warnings on any of the five runners, before or after.
+
   **Released v1.4.0 — follow real steps in the sync position (S26):** the
   user reported that whenever the **Sync corr** LED lit, the black sync
   strip stopped being one solid bar — half stayed at one end of the line
