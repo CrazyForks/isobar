@@ -266,7 +266,20 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
      * (the JMH sample does exactly this - a new transmission starts at
      * line 930 with the sync 2878 samples away, and it must be allowed to
      * follow). Three times the release counter: long enough that no
-     * transient reaches it, short enough to catch a real handover. */
+     * transient reaches it, short enough to catch a real handover.
+     *
+     * In practice this is now a SAFETY NET rather than the working escape
+     * route, and sessions 27-28 were wrong to worry that it never fires.
+     * Measured (S29, cli/reacq-test.cpp): the threshold is reached on 49
+     * lines of the full himawari reception and 27 of jmh-phasing-16k, so it
+     * is reachable - but disabling it entirely changes no test and no
+     * measured number on any fixture, because sync_step_lock gets there
+     * first. Against an injected step of 200..2000 samples, with or without
+     * a dead stretch before it, step-lock restores the phase on the line the
+     * step happens; with step-lock removed the same step leaves 35 of 74
+     * lines mis-phased even with this widen available, and with both removed
+     * all 74. Kept because it is the only way back when sync_line_pulse
+     * cannot find an unambiguous pulse at all, which no fixture covers. */
     const int widen_after = p.max_coast > 0 ? 3 * p.max_coast : 30;
 
     for (long grid = 0; grid + LINE_SAMPLES <= total; grid += LINE_SAMPLES) {
