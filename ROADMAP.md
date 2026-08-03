@@ -450,6 +450,15 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   the macOS dependency step now installs only what is missing, so
   "already installed and up-to-date" stops burying real warnings. No
   compiler warnings on any of the five runners, before or after.
+  The branch dry run before tagging earned its keep on this release, and
+  what it found is now written down in **`docs/06-release-process.md`**
+  (new): the procedure, the documentation checklist that goes with a bump,
+  and the failures that have actually happened. Its first rule is to push
+  `main` after every session — all four problems this release hit were in
+  code that had never reached a runner, because `main` had sat unpushed
+  since S27. Two were fatal (both Linux jobs failed to compile on an
+  unqualified `size_t` in `syncscan.h`; every packaging job failed on a
+  slash in the branch name) and two were the MSVC warnings above.
 
   **Released v1.4.0 — follow real steps in the sync position (S26):** the
   user reported that whenever the **Sync corr** LED lit, the black sync

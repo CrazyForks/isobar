@@ -128,6 +128,7 @@ cli/    isobar-decode (the decoder CLI) + the headless test suite.
 gui/    FLTK GUI: main window, scope, dialogs, RtAudio capture.
 docs/   Functional specification (derived from reverse engineering) + plans.
         Read docs/README.md first, then docs/01-program-analysis.md.
+        docs/06-release-process.md covers releasing (read before tagging).
 cmake/  Templates filled in at configure time: the version header
         (isobar_version.h.in; one source of truth) and the Windows
         resource script (isobar.rc.in; exe icon + version metadata).

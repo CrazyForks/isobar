@@ -20,6 +20,7 @@ and the implementation plans.
 | `03-option-b-macos-native.md` | Alternative plan: Swift + AppKit, macOS only (historical; not chosen). |
 | `04-decision-guide.md` | Side-by-side comparison of A vs B and the shared first milestone (DSP core). |
 | `05-gui-layout.md` | Exact GUI layout of all 10 forms (captions, coordinates, sizes), extracted from the original binary's form resources. The authoritative layout reference. |
+| `06-release-process.md` | How a version gets released, what only CI can catch, and the mistakes that have actually happened. Read before tagging. |
 
 ## Status
 
@@ -92,6 +93,10 @@ dark rivals to the real pulse.
 4. `ROADMAP.md` has the milestone-level map of done vs pending. (Maintainers
    also keep a private `SESSION-LOG.md` for session-to-session handoff; it is
    not published.)
+5. Before cutting a release, read `06-release-process.md`. Its first rule —
+   push `main` after every session, release or not — exists because three
+   sessions once accumulated locally and reached CI carrying a compile error
+   that broke both Linux builds.
 
 ## What gets published vs. stays private
 
@@ -103,8 +108,12 @@ copyrighted expression out of the public repo. The rule:
 references and addresses stripped — `01-program-analysis.md` is now spec, not
 a code dump), `CMakeLists.txt` + `cmake/` (build system), `assets/` (icons),
 `macos/` (Info.plist template), `tools/` (icon-gen + DFM-extract scripts),
-the test fixture `jmh-sample-short.wav`, `LICENSE`, `NOTICE`, `ROADMAP.md`,
-and this index.
+the five committed test fixtures (`jmh-sample-short.wav`,
+`jmh-offair-12k.wav`, `jmh-slew-12k.wav`, `jmh-phasing-16k.wav`,
+`jmh-himawari-12k.wav` — short excerpts of off-air receptions, each kept
+small enough that every clone and CI checkout can afford it; the full
+recordings they come from stay local and gitignored), `LICENSE`, `NOTICE`,
+`ROADMAP.md`, and this index.
 
 **Private (gitignored, never published):**
 - The original `kgfax.exe` binary, its Hex-Rays decompile (`kgfax.exe.c`),
