@@ -98,6 +98,8 @@ private:
     std::vector<int> sm;        /* 8-sample moving average of buf  */
     long acc;                   /* running MA sum                  */
     std::deque<long> edges;     /* detected sync-edge candidates   */
+    std::deque<int> edge_dark;  /* each one's run-mean brightness;
+                                   kept in lockstep with `edges`   */
     long run_start;             /* dark-run start, -1 = not in run */
 
     /* line grid + phase (docs/01 sec. 3.2): line n covers samples
