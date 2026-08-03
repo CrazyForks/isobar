@@ -52,11 +52,11 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (packaging & cross-platform CI) done — v1.4.0
+workflow is complete; M6 (packaging & cross-platform CI) done — v1.5.0
 released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
-there are four committed test fixtures, each covering something the others
+there are five committed test fixtures, each covering something the others
 cannot. `jmh-sample-short.wav` is a 30 s excerpt (44.1 kHz stereo Int16) of a
 strong signal — the full 9.6 min recording exists locally but is gitignored at
 97 MB, and tests auto-detect whichever is present. `jmh-offair-12k.wav` is 60 s
@@ -73,6 +73,14 @@ runaway (`phasing-test`). `jmh-slew-12k.wav` is a second 60 s cut of the same
 position — it moves 2131 → 1969 in one line and holds there, which is what a
 networked SDR's clock-slip correction leaves behind — and so the only one
 that measures whether the sync strip stays solid across it (`slew-test`).
+`jmh-himawari-12k.wav` is 60 s of a KiwiSDR HIMAWARI IR reception at 12 kHz
+(added v1.5.0): the only fixture whose video is a **photo** rather than a
+chart, so the only one where the darkest thing on a line is usually cloud
+instead of the sync pulse. That difference broke the tracker twice before
+anything tested it (`satellite-test`), and it is also the fixture
+`reacq-test` splices to check the decoder can abandon a phase that has gone
+wrong — the hard case, because cloud gives a whole-line search plenty of
+dark rivals to the real pulse.
 
 ## How the next contributor should use this
 
