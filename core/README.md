@@ -20,7 +20,12 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   rate (SDR recorders commonly write 8000/12000/48000) goes through
   `resample.*` in either direction. Below 6000 Hz there is no Nyquist room
   for the 2300 Hz white subcarrier, so it is rejected with a clear error,
-  as are non-PCM and non-16-bit files.
+  as are non-PCM and non-16-bit files. PCM tagged
+  **`WAVE_FORMAT_EXTENSIBLE`** (`0xFFFE`) is read as well: the effective
+  format tag comes from the SubFormat GUID, whose fixed
+  `KSDATAFORMAT_SUBTYPE` tail is checked so a genuinely different format
+  still fails. macOS `afconvert -f WAVE` writes that header for any source
+  with a channel layout, which is every `.m4a` (`wavrate-test`).
 - `syncscan.*` — line extraction (120/60 rpm): lines are emitted on a
   fixed 4000-sample grid from stream start (preamble included, like the
   original), rotated by the tracked phase offset (sync edge → index 0);
