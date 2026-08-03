@@ -187,7 +187,10 @@ int main()
                            std::ios::in | std::ios::out | std::ios::binary);
         patch.seekp(46);            /* first byte of the GUID's fixed tail:
                                      * 20 (fmt body) + 24 (GUID) + 2 (tag) */
-        patch.put((char)0x99);
+        patch.put(0x11);            /* any byte but the 0x00 that belongs
+                                     * there; kept under 0x80 so the cast to
+                                     * a signed char does not truncate
+                                     * (MSVC C4310) */
         patch.close();
         bool threw = false;
         try {

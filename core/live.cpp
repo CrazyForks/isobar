@@ -109,9 +109,10 @@ void LiveScan::feed(const uint8_t *data, size_t n,
             long len = (long)i - run_start;
             if (len >= p.min_pulse && len <= p.max_pulse) {
                 edges.push_back(run_start);
-                long s = 0;
-                for (long k = 0; k < len; k++)
-                    s += sm[run_start + k];
+                long s = 0;      /* `j`, not `k`: the feed() loop above owns
+                                  * that name, and MSVC warns (C4456) */
+                for (long j = 0; j < len; j++)
+                    s += sm[run_start + j];
                 edge_dark.push_back((int)(s / len));
             }
             run_start = -1;
