@@ -60,13 +60,21 @@ jobs:
             artifact: Isobar-${{ github.ref_name }}-windows.zip
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         # dylibbundler embeds the Homebrew FLTK/RtAudio dylibs into the .app
         # so the .dmg runs on Macs without Homebrew installed (see Bundle step).
-        run: brew install cmake fltk rtaudio pkg-config dylibbundler
+        # Installed one at a time and only when missing — see the same step in
+        # build.yml for why (log noise from already-current formulae).
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          for pkg in cmake fltk rtaudio pkg-config dylibbundler; do
+            brew list --formula "$pkg" >/dev/null 2>&1 || brew install "$pkg"
+          done
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -214,7 +222,7 @@ jobs:
           mv "build/${{ matrix.artifact }}" out/
           ls -la out/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg-${{ matrix.os }}
           path: out/${{ matrix.artifact }}
@@ -231,7 +239,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true

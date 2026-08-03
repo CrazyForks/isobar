@@ -34,11 +34,23 @@ jobs:
           - windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # Only install what is missing. The runner image already ships cmake and
+      # pkgconf, and `brew install` on a package that is already current is not
+      # a no-op — it prints "Warning: <pkg> is already installed and
+      # up-to-date", which is noise in a log people read to find real warnings.
+      # HOMEBREW_NO_AUTO_UPDATE keeps brew from refreshing (and complaining
+      # about) taps we do not use.
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install cmake fltk rtaudio pkg-config
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          for pkg in cmake fltk rtaudio pkg-config; do
+            brew list --formula "$pkg" >/dev/null 2>&1 || brew install "$pkg"
+          done
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -67,7 +79,7 @@ jobs:
       # baseline moves with the runner image, hence the restore-key.
       - name: Cache vcpkg binary packages (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: vcpkg-x64-windows-static-md-fltk-rtaudio-${{ github.run_id }}
@@ -98,7 +110,7 @@ jobs:
         run: ctest -C Release --output-on-failure
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: build-${{ matrix.os }}
