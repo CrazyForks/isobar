@@ -55,9 +55,12 @@ std::vector<int> moving_average(const std::vector<uint8_t> &v)
 }
 
 /* Collect candidate sync edges: start index of every dark run whose
- * length is a plausible sync pulse width (docs/01 sec. 3.2(7)). */
+ * length is a plausible sync pulse width (docs/01 sec. 3.2(7)).
+ * `dark_out` (may be null) receives each run's mean brightness, which
+ * find_lock uses to tell a sync pulse from picture content. */
 std::vector<long> find_sync_edges(const std::vector<int> &sm,
-                                  const SyncParams &p)
+                                  const SyncParams &p,
+                                  std::vector<int> *dark_out = nullptr)
 {
     std::vector<long> edges;
     long run_start = -1;
@@ -67,8 +70,15 @@ std::vector<long> find_sync_edges(const std::vector<int> &sm,
             run_start = (long)i;
         else if (!dark && run_start >= 0) {
             long len = (long)i - run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse)
+            if (len >= p.min_pulse && len <= p.max_pulse) {
                 edges.push_back(run_start);
+                if (dark_out) {
+                    long s = 0;
+                    for (long k = 0; k < len; k++)
+                        s += sm[run_start + k];
+                    dark_out->push_back((int)(s / len));
+                }
+            }
             run_start = -1;
         }
     }
@@ -80,8 +90,9 @@ std::vector<long> find_sync_edges(const std::vector<int> &sm,
  * junk edges from image content in between (lock_hyst, which comes from
  * RReSycn - NOT LReSycn, which is the release counter; docs/01
  * sec. 3.2(8)). Returns edges.size() if none. */
-size_t find_lock(const std::vector<long> &edges, size_t from,
-                 long lo, long hi, long win_end, const SyncParams &p)
+size_t find_lock(const std::vector<long> &edges, const std::vector<int> &darks,
+                 size_t from, long lo, long hi, long win_end,
+                 const SyncParams &p)
 {
     int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
     for (size_t i = from; i + 1 < edges.size(); i++) {
@@ -89,6 +100,8 @@ size_t find_lock(const std::vector<long> &edges, size_t from,
             break;              /* chain start beyond this line window */
         if (edges[i] < lo || edges[i] > hi)
             continue;           /* outside the allowed neighbourhood */
+        if (i < darks.size() && darks[i] >= sync_dark_floor(p))
+            continue;           /* too pale to be a sync pulse */
         long cur = edges[i];
         int links = 0;
         for (size_t j = i + 1; j < edges.size(); j++) {
@@ -225,7 +238,8 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
         return img;
 
     std::vector<int> sm = moving_average(video);
-    std::vector<long> edges = find_sync_edges(sm, p);
+    std::vector<int> edge_dark;
+    std::vector<long> edges = find_sync_edges(sm, p, &edge_dark);
 
     /* Line grid (docs/01 sec. 3.2): line n covers samples
      * [n*4000, (n+1)*4000), emitted rotated by phi so the sync edge
@@ -294,11 +308,12 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     if (expected + p.fallback_win / 2 < hi)
                         hi = expected + p.fallback_win / 2;
                 }
-                size_t nl = find_lock(edges, lock_from, lo, hi,
+                size_t nl = find_lock(edges, edge_dark, lock_from, lo, hi,
                                       grid + LINE_SAMPLES, p);
                 if (nl < edges.size()) {
                     long E = edges[nl];
-                    phi = (E - grid) % LINE_SAMPLES;
+                    phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
+                          % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
                     last_shape = E;
@@ -319,22 +334,35 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                  * edge position (grid+phi), which stays ~4000 even
                  * across fallback/coast lines. */
                 long prev_edge = grid - LINE_SAMPLES + phi;
-                while (ei < edges.size() &&
-                       edges[ei] < expected - p.search_win)
+                /* The window is judged on the ANCHOR, not on the raw edge
+                 * the detector published: the prediction is an anchor, and
+                 * comparing it against a leading edge shifts the +-search_win
+                 * window by the gap between the two - which cost 43 shape
+                 * locks and tripled the relocks on the himawari recording
+                 * when the anchor went in. So bracket generously on raw
+                 * position (an anchor sits within win/2 of its own edge) and
+                 * test the anchor itself. */
+                long bracket = p.search_win +
+                               (p.fallback_win > 0 ? p.fallback_win : 160) / 2;
+                while (ei < edges.size() && edges[ei] < expected - bracket)
                     ei++;
-                if (ei < edges.size() &&
-                    edges[ei] <= expected + p.search_win) {
-                    long E = edges[ei];
+                for (size_t k = ei;
+                     k < edges.size() && edges[k] <= expected + bracket; k++) {
+                    long E = sync_anchor(sm, edges[k], p);
+                    if (E < expected - p.search_win ||
+                        E > expected + p.search_win)
+                        continue;
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
-                        last_shape = E;
+                        last_shape = edges[k];   /* raw: indexes `edges` */
                         miss = 0;
                         since_shape = 0;
                         how = 0;
                     }
+                    break;
                 }
             }
 
@@ -372,10 +400,39 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                 }
                 if (fb < 0 && lo <= hi) {
                     fb = fallback_edge(sm, lo, hi, p, expected, ever_locked);
+                    bool ported = fb >= 0;
                     if (fb < 0)
                         fb = fallback_search(sm, lo, hi, p);
+                    /* Hold rather than slew onto dark picture. A missed
+                     * shape check does not mean the phase is wrong - it
+                     * usually means this one line's pulse edge merged or
+                     * vanished (3% of lines on himawari). Slewing toward
+                     * whatever is darkest within +-fallback_win/2 then
+                     * CORRUPTS a phase that was correct, and the next
+                     * line's prediction inherits the error: 727 of 2003
+                     * lines arrived at the shape check already 41-200
+                     * samples out. Coasting keeps the good phase and lets
+                     * the next line's shape check resume.
+                     * Same test as the chain-start floor, for the same
+                     * reason - a real pulse is absolutely black, dark
+                     * picture is not.
+                     * Only OUR dip-depth second chance is gated. The
+                     * ported tracker above already carries the original's
+                     * own bound (fb_mean/SyncThre) and earns its answers;
+                     * gating it too rejected genuine degraded pulses on
+                     * clean off-air audio and emptied the fallback path
+                     * that offair-test exists to cover. */
+                    if (!ported && fb >= 0 &&
+                        sync_run_mean(sm, fb, p) >= sync_dark_floor(p))
+                        fb = -1;
                 }
                 if (fb >= 0) {
+                    /* one reference for every path (sync_anchor) - a
+                     * fallback result published at the run's leading edge
+                     * and a shape lock published at the darkest window
+                     * would otherwise tear the strip whenever tracking
+                     * switched between them */
+                    fb = sync_anchor(sm, fb, p);
                     long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     /* a confirmed step is taken whole; anything else is
                      * rate-limited (see sync_slew) */

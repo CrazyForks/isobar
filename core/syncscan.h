@@ -82,6 +82,162 @@ struct SyncParams {
 
 SyncParams sync_default_params();
 
+/* How black a dark run must be, on average, to be allowed to START a lock
+ * chain. Shared by scan_lines and LiveScan (the two must stay
+ * byte-identical - live-test).
+ *
+ * Lock acquisition takes the first edge that sustains lock_hyst valid
+ * ~4000-sample periods. On a picture-heavy image that is not enough:
+ * cloud edges in a satellite photo repeat line to line closely enough to
+ * sustain a chain of their own, and because the edge list is in position
+ * order, a picture chain EARLIER in the line beats the real sync pulse.
+ * Measured on a 17-minute KiwiSDR himawari reception, the decoder locked
+ * 339 samples off the true sync on its very first lock and never got back
+ * - re-acquisition is confined to the neighbourhood of the phase it
+ * already has, so a false lock is self-sustaining.
+ *
+ * Darkness separates the two cleanly where position does not. Run-mean
+ * brightness at the true pulse against every picture chain that competes
+ * with it:
+ *
+ *   recording            real pulse (median/90%)   picture chain (10%/median)
+ *   kiwi himawari              12 / 22                    33 / 48
+ *   kiwi test chart            19 / 33                    50 / 55
+ *   FAXSignal                   3 /  4                    37 / 53
+ *   jmh-offair-12k             17 / 26                    (none at all)
+ *
+ * dark_th/3 keeps 98.4-100% of real pulses on all four and rejects ~91%
+ * of picture chains on himawari, ~95% on the test chart. Expressed as a
+ * fraction of dark_th rather than a new constant, so the one "how black
+ * is black" setting still governs it (Sync2Thre in the Details dialog).
+ * This gates the chain START only - the chain's own period test and
+ * everything downstream are unchanged. */
+inline int sync_dark_floor(const SyncParams &p) { return p.dark_th / 3; }
+
+/* Mean brightness of the dark run STARTING at `pos`, or 255 if there is no
+ * dark run there. The same quantity find_lock scores a chain start by,
+ * measured at a fallback result instead. Shared by scan_lines and LiveScan.
+ *
+ * Probed from min_pulse/2 INSIDE the run, not at `pos` itself: both callers
+ * publish the bright->dark edge, where the moving average is still crossing
+ * dark_th, so sampling exactly there reads a bright value and would reject
+ * every genuine pulse (it did - offair-test went to 0 corrected lines). Any
+ * run long enough to be a sync pulse covers that probe point. */
+inline int sync_run_mean(const std::vector<int> &sm, long pos,
+                         const SyncParams &p)
+{
+    long n = (long)sm.size();
+    pos += p.min_pulse / 2;
+    if (pos < 0 || pos >= n || sm[pos] >= p.dark_th)
+        return 255;
+    long lo = pos, hi = pos;
+    while (lo > 0 && sm[lo - 1] < p.dark_th && pos - lo < p.max_pulse)
+        lo--;
+    while (hi + 1 < n && sm[hi + 1] < p.dark_th && hi - pos < p.max_pulse)
+        hi++;
+    long s = 0;
+    for (long i = lo; i <= hi; i++)
+        s += sm[i];
+    return (int)(s / (hi - lo + 1));
+}
+
+/* Refine a sync position from the dark run's leading edge to the steadiest
+ * point of the pulse. Shared by scan_lines and LiveScan (live-test).
+ *
+ * Every detector here publishes the same thing: the first sample where the
+ * 8-sample moving average crosses dark_th. That is ONE sample, and it moves
+ * with noise and with whatever picture abuts the pulse - which is the
+ * per-line wobble still left in the image after the S27 fixes, and what the
+ * eye reads as a ragged baseline. The pulse as a whole is far bigger
+ * evidence. Line-to-line wobble of the same pulses, de-trended so the
+ * transmission's own drift is not counted as jitter:
+ *
+ *   anchor           off-air 12k (rms/median/90%)   himawari (median/90%)
+ *   run start           4.18 / 1.0 / 3.0               2.2 / 42.2
+ *   run centre          2.65 / 0.5 / 2.5               1.3 / 21.8
+ *   darkest window      0.95 / 1.0 / 2.0               0.8 /  3.8
+ *   matched step edge   1.65 / 1.0 / 2.0               1.8 / 37.2
+ *
+ * So: the start of the darkest fallback_win-wide window. A JMH sync pulse
+ * is ~158 samples against the 160 default, so the window has to straddle
+ * both of the run's edges to find its minimum - which makes the result a
+ * darkness-weighted CENTRE estimate, with the noise on the two edges partly
+ * cancelling. A leading-edge estimator cannot do that however much it
+ * averages (the matched step above, 50 and 80 samples either side), because
+ * on a photo the picture abutting the pulse moves the edge itself.
+ *
+ * Three bounds keep it honest, all of them about black wider than a pulse -
+ * a chart's margin merged with the sync (FAXSignal: 328-sample runs), a
+ * black band in a satellite photo:
+ *   - the dark run may be at most 2*win wide, else there is no pulse shape
+ *     to centre on;
+ *   - the minimum must be a real dip and not a tie - inside flat black
+ *     every window position is equally dark and the argmin lands
+ *     arbitrarily (on FAXSignal that moved the phase 418 samples on a
+ *     single line). So the minimum plateau, at 2 grey levels' tolerance,
+ *     must be narrower than win/4 and must not touch either end of the
+ *     search - a minimum at the boundary means the true one is outside it.
+ *     Where it does qualify, the plateau's CENTRE is the anchor, which
+ *     removes what little tie is left;
+ *   - and the anchor may move at most win/2 from the position published.
+ * A move that big does not merely shift the image, it wraps the leading
+ * part of the strip to the far end of the line - the split strip of S26.
+ *
+ * Positions with no dark run (a coasted prediction, the video's end) and
+ * anything failing those tests come back unchanged, so every path that
+ * cannot be improved behaves exactly as it did before. */
+inline long sync_anchor(const std::vector<int> &sm, long pos,
+                        const SyncParams &p)
+{
+    long n = (long)sm.size();
+    long win = p.fallback_win > 0 ? p.fallback_win : 160;
+    long probe = pos + p.min_pulse / 2;
+    if (pos < 0 || probe >= n || sm[probe] >= p.dark_th)
+        return pos;
+
+    /* the dark run around the probe, and out if it is too wide to be one
+     * pulse (walked no further than the bound, so this stays cheap) */
+    long runmax = 2 * win;
+    long lo = probe, hi = probe;
+    while (lo > 0 && sm[lo - 1] < p.dark_th && probe - lo <= runmax)
+        lo--;
+    while (hi + 1 < n && sm[hi + 1] < p.dark_th && hi - probe <= runmax)
+        hi++;
+    if (hi - lo + 1 > runmax)
+        return pos;
+
+    /* mean brightness of a win-wide window at every position within win/2
+     * of pos (kept as a sum: the comparisons below scale with it) */
+    long qlo = pos - win / 2, qhi = pos + win / 2;
+    if (qlo < 0) qlo = 0;
+    if (qhi > n - win) qhi = n - win;
+    if (qlo >= qhi)
+        return pos;
+    std::vector<long> s((size_t)(qhi - qlo + 1));
+    long sum = 0;
+    for (long i = qlo; i < qlo + win; i++)
+        sum += sm[i];
+    s[0] = sum;
+    long best = sum;
+    for (long q = qlo + 1; q <= qhi; q++) {
+        sum += sm[q + win - 1] - sm[q - 1];
+        s[(size_t)(q - qlo)] = sum;
+        if (sum < best)
+            best = sum;
+    }
+
+    long first = -1, last = -1;
+    for (long q = qlo; q <= qhi; q++)
+        if (s[(size_t)(q - qlo)] <= best + 2 * win) {   /* 2 grey levels */
+            if (first < 0)
+                first = q;
+            last = q;
+        }
+    if (last - first > win / 4 || first == qlo || last == qhi)
+        return pos;
+    return (first + last) / 2;
+}
+
 /* The one unambiguous sync pulse in a line, or -1 if there isn't one.
  *
  * Darkest fallback_win window anywhere in the line, accepted only if it
@@ -127,7 +283,29 @@ inline long sync_line_pulse(const std::vector<int> &sm, long grid,
         if (m[q] < rival)
             rival = m[q];
     }
-    if (m[best] >= p.dark_th || rival - m[best] < p.dark_th / 2)
+    if (m[best] >= p.dark_th)
+        return -1;
+    /* The rival margin asks "is this much darker than anything else in the
+     * line". That is a chart's question. A satellite photo has large
+     * near-black areas, so a cloud 300 samples away is nearly as dark as
+     * the pulse and the margin collapses - measured on a KiwiSDR himawari
+     * reception, the darkest window IS the real pulse on 93.9% of lines
+     * and passes the dark and width tests, but the margin test passes on
+     * 1.5% (median margin 24 against the required 48). The whole-line
+     * rescue was therefore switched off exactly where it was needed, and
+     * the phase wandered instead: 40% of lines more than 10 px off.
+     *
+     * So accept on absolute darkness as an alternative: a sync pulse is
+     * genuinely black (run-mean 12 on himawari, 3 on FAXSignal, 17-19 on
+     * the two off-air recordings) while the picture chains that compete
+     * with it sit near dark_th/2. This is the same floor find_lock uses
+     * on a chain start, for the same reason. It only ADDS acceptances -
+     * anything the margin already admitted still is - so chart-like
+     * content behaves exactly as before, and the width test above still
+     * excludes a chart's wide black margin either way. What keeps the
+     * extra acceptances honest is sync_step_lock's next-line agreement,
+     * which no dark patch of picture survives twice at the same phase. */
+    if (rival - m[best] < p.dark_th / 2 && m[best] >= sync_dark_floor(p))
         return -1;
 
     /* width: expand the dark run around the darkest sample in the window */

@@ -21,6 +21,7 @@ void LiveScan::reset()
     sm.clear();
     acc = 0;
     edges.clear();
+    edge_dark.clear();
     run_start = -1;
     phi = 0;
     fb_dir = 0;
@@ -106,8 +107,13 @@ void LiveScan::feed(const uint8_t *data, size_t n,
             run_start = (long)i;
         else if (!dark && run_start >= 0) {
             long len = (long)i - run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse)
+            if (len >= p.min_pulse && len <= p.max_pulse) {
                 edges.push_back(run_start);
+                long s = 0;
+                for (long k = 0; k < len; k++)
+                    s += sm[run_start + k];
+                edge_dark.push_back((int)(s / len));
+            }
             run_start = -1;
         }
     }
@@ -164,6 +170,8 @@ long LiveScan::try_lock(long grid)
                                      earlier line: release leaves
                                      lock_from at the last shape edge,
                                      which may be several lines back) */
+        if (i < edge_dark.size() && edge_dark[i] >= sync_dark_floor(p))
+            continue;             /* too pale to be a sync pulse */
         long cur = edges[i];
         int links = 0;
         bool broken = false, waiting = false;
@@ -333,8 +341,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 locked = false;
                 miss = 0;
                 since_shape = 0;
-                while (!edges.empty() && edges.front() < grid)
+                while (!edges.empty() && edges.front() < grid) {
                     edges.pop_front();
+                    edge_dark.pop_front();
+                }
                 lock_from = grid;
             }
         }
@@ -357,7 +367,8 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 if (E == -1)
                     return;      /* undecidable yet: wait */
                 if (E >= 0) {
-                    phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                    phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
+                          % LINE_SAMPLES;
                     fb_dir = 0;
                     fb_run = 0;
                     manual_hold = false;
@@ -379,30 +390,38 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                  * position (grid+phi), which stays ~4000 even across
                  * fallback/coast lines. */
                 long prev_edge = grid - LINE_SAMPLES + phi;
-                while (!edges.empty() &&
-                       edges.front() < expected - p.search_win)
+                long win = p.fallback_win > 0 ? p.fallback_win : 160;
+                long bracket = p.search_win + win / 2;
+                while (!edges.empty() && edges.front() < expected - bracket) {
                     edges.pop_front();
-                if (!edges.empty() &&
-                    edges.front() <= expected + p.search_win) {
-                    /* the front edge is final (runs are sequential) */
-                    long E = edges.front();
+                    edge_dark.pop_front();
+                }
+                /* Nothing here is final until any run starting inside the
+                 * bracket has ended (max_pulse) - which also covers the
+                 * 3*win/2 that sync_anchor reads past a candidate, so the
+                 * anchor comes out the same as the batch scanner's
+                 * (live-test). */
+                if (!finishing &&
+                    (long)buf.size() <= expected + bracket + p.max_pulse)
+                    return;       /* undecidable yet: wait */
+                for (size_t k = 0;
+                     k < edges.size() && edges[k] <= expected + bracket; k++) {
+                    long E = sync_anchor(sm, edges[k], p);
+                    if (E < expected - p.search_win ||
+                        E > expected + p.search_win)
+                        continue;
                     long per = E - prev_edge;
                     if (per >= p.min_period && per <= p.max_period) {
                         phi = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
                         fb_dir = 0;
                         fb_run = 0;
                         manual_hold = false;
-                        last_shape = E;
+                        last_shape = edges[k];   /* raw: indexes `edges` */
                         miss = 0;
                         since_shape = 0;
                         how = 0;
                     }
-                } else {
-                    /* "no edge" is only final once any run starting
-                     * inside the match window must have ended */
-                    if ((long)buf.size() <= expected + p.search_win +
-                                              p.max_pulse)
-                        return;   /* undecidable yet: wait */
+                    break;
                 }
             }
 
@@ -438,10 +457,26 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     /* ported tracker first, our dip-depth search as the
                      * second chance - mirrors syncscan exactly */
                     fb = fallback_edge(flo, fhi, expected);
+                    bool ported = fb >= 0;
                     if (fb < 0)
                         fb = fallback(flo, fhi);
+                    /* hold rather than slew onto dark picture, and only on
+                     * our second chance - see the same test in
+                     * syncscan.cpp for why */
+                    if (!ported && fb >= 0 &&
+                        sync_run_mean(sm, fb, p) >= sync_dark_floor(p))
+                        fb = -1;
                 }
                 if (fb >= 0) {
+                    /* one reference for every path - see syncscan.cpp.
+                     * sync_anchor reads 3*win/2 past its argument, so hold
+                     * the line back until that has arrived, or the live
+                     * anchor would be computed on less video than the batch
+                     * one (live-test). */
+                    long aw = p.fallback_win > 0 ? p.fallback_win : 160;
+                    if (!finishing && (long)buf.size() < fb + 3 * aw / 2 + 1)
+                        return;
+                    fb = sync_anchor(sm, fb, p);
                     long tgt = (fb - grid + LINE_SAMPLES) % LINE_SAMPLES;
                     if (snapped) {
                         phi = tgt;
@@ -459,8 +494,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 /* full release (RReSycn): re-acquire on next lines */
                 if (locked && since_shape > p.max_coast) {
                     locked = false;
-                    while (!edges.empty() && edges.front() <= last_shape)
+                    while (!edges.empty() && edges.front() <= last_shape) {
                         edges.pop_front();
+                        edge_dark.pop_front();
+                    }
                     lock_from = last_shape + 1;
                 }
             }
