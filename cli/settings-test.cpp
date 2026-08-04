@@ -83,10 +83,12 @@ int main()
     /* The defaults are the ORIGINAL program's, lifted from the
      * TIniFile::ReadInteger literals in its ini loader (docs/01 sec. 6).
      * They are not ours to tidy, so pin every one of them.
-     * dark_threshold and fallback_depth are the two deliberate exceptions: the keys
-     * exist in both programs but feed differently-shaped formulas here,
-     * so the original's 20/30 would mis-tune our detector
-     * (DEVIATIONS.md #16). */
+     * dark_threshold is the one deliberate exception: the key exists in
+     * both programs but feeds a differently-shaped formula here, so the
+     * original's 20 would mis-tune our detector (DEVIATIONS.md #16).
+     * fallback_depth used to be the second exception while it drove our
+     * dip-depth second chance; since it points at fb_mean (the original's
+     * own quantity) the original's 30 is again the right default. */
     KgSettings def;
     settings_defaults(def);
     if (def.release_after != 10) return fail("default ReleaseAfter != 10");
@@ -101,18 +103,22 @@ int main()
     if (def.formy     != 0)   return fail("default FormY != 0");
     if (!def.dirname.empty()) return fail("default DirName not empty");
     if (def.dark_threshold != 96) return fail("default DarkThreshold != 96 (ours)");
-    if (def.fallback_depth != 10) return fail("default FallbackDepth != 10 (ours)");
+    if (def.fallback_depth != 30) return fail("default FallbackDepth != 30 (SyncThre)");
     /* FallbackDepth must stay a legal Form4 combo value: 20*index + 10 */
     if ((def.fallback_depth - 10) % 20 != 0)
         return fail("default FallbackDepth is not a 20*i+10 combo value");
 
     /* The settings -> decoder mapping must not drift back to the swapped
-     * reading (LReSycn releases, RReSycn locks) or the old pulse-width
-     * misreading of SyncWidth. */
+     * reading (LReSycn releases, RReSycn locks), the old pulse-width
+     * misreading of SyncWidth, or FallbackDepth feeding our dip-depth
+     * second chance instead of the original's fb_mean. */
     SyncParams sp = sync_params_from_settings(def);
     if (sp.max_coast  != def.release_after) return fail("ReleaseAfter -> max_coast");
     if (sp.lock_hyst  != def.lock_after)    return fail("LockAfter -> lock_hyst");
     if (sp.search_win != def.max_jump)      return fail("MaxJump -> search_win");
+    if (sp.fb_mean    != def.fallback_depth) return fail("FallbackDepth -> fb_mean");
+    if (sp.fb_thresh  != 10)
+        return fail("fb_thresh must stay hard-coded at 10 (no ini key)");
     if (sp.min_pulse != 100 || sp.max_pulse != 400)
         return fail("pulse window must stay hard-coded at 100..400");
 

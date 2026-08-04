@@ -88,10 +88,10 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   (`DarkThreshold`, `FallbackDepth`, `ReleaseAfter`, `LockAfter`,
   `MaxJump`, `ToneBlocks`); `settings_read_kgfax()` still parses the
   original's names, and `docs/01` §6 has the mapping table.
-  Ten of the twelve defaults are the original's own; `DarkThreshold` and
-  `FallbackDepth` are ours because our sync detector computes those two
-  quantities differently (`DEVIATIONS.md` #16) — which is also why the
-  file is no longer shared with the original. `settings_load()` imports an
+  Eleven of the twelve defaults are the original's own; `DarkThreshold`
+  is ours because our sync detector computes that quantity differently
+  (`DEVIATIONS.md` #16) — which is also why the file is no longer shared
+  with the original. `settings_load()` imports an
   existing `kgfax.ini` once, taking only the unambiguous preferences.
   `sync_params_from_settings()` is the single settings→decoder mapping,
   used by both the GUI and the tests.

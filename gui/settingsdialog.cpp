@@ -13,6 +13,12 @@
  *   y=116 Panel3/UpDown3   -> ToneBlocks    (DetTime, 100 ms blocks)
  * The original's Panel+UpDown pairs become Fl_Spinners.
  *
+ * The "Sync detect" combo drives SyncParams::fb_mean, the boxcar-mean
+ * bound on the ported fallback tracker - the same quantity the
+ * original's SyncThre governs, so its 10/30/50 presets transfer exactly
+ * (until 2026-08-04 it drove our dip-depth second chance instead; see
+ * DEVIATIONS.md #16).
+ *
  * COORDINATE GOTCHA (same as the main window): plain Fl_Group does not
  * offset its children, so group-relative VCL coordinates are added to
  * the group origin (GX/GY, IX/IY below).

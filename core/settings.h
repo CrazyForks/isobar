@@ -11,7 +11,7 @@
  *
  *   isobar.ini        kgfax.ini     meaning
  *   DarkThreshold     Sync2Thre     brightness at/below which = "dark"
- *   FallbackDepth     SyncThre      min dip below local mean, fallback
+ *   FallbackDepth     SyncThre      max boxcar mean for a fallback edge
  *   ReleaseAfter      LReSycn       invalid lines -> drop lock
  *   LockAfter         RReSycn       valid lines   -> declare lock
  *   MaxJump           SyncWidth     samples the sync may move per line
@@ -34,7 +34,7 @@ struct KgSettings {
     int dark_threshold;  /* brightness at/below this = "dark"        */
     int release_after;   /* invalid lines before the lock is dropped */
     int lock_after;      /* valid lines before the lock is declared  */
-    int fallback_depth;  /* fallback validation level = 20*i+10      */
+    int fallback_depth;  /* fallback edge bound (fb_mean) = 20*i+10     */
     int max_jump;        /* samples the sync position may move/line  */
     /* [Det] */
     int tone_blocks;     /* tone integration, count of 100 ms blocks */
@@ -51,15 +51,15 @@ struct KgSettings {
 };
 
 /* Built-in defaults: the original program's own, read out of the
- * ReadInteger literals in its ini loader (docs/01 sec. 6). The two
- * exceptions are dark_threshold and fallback_depth - see settings.cpp. */
+ * ReadInteger literals in its ini loader (docs/01 sec. 6). The one
+ * exception is dark_threshold - see settings.cpp. */
 void settings_defaults(KgSettings &s);
 
 /* settings -> decoder thresholds (docs/01 sec. 5-6):
  *   max_jump       -> search_win  (NOT a pulse width; the 100..400-sample
  *                     pulse window is hard-coded and has no ini key)
  *   release_after  -> max_coast   dark_threshold -> dark_th
- *   lock_after     -> lock_hyst   fallback_depth -> fb_thresh
+ *   lock_after     -> lock_hyst   fallback_depth -> fb_mean
  *   syn combo      -> fallback_win = 40*(i+1) samples, halved on the
  *                     4000 S/s 60-rpm stream
  * Lives here rather than in the GUI so the tests exercise the same

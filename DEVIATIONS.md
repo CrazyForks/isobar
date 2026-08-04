@@ -10,8 +10,8 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
    serializes DSP through `TThread::Synchronize` onto the GUI thread, which is
    the cause of the window-animation warning in the original readme. We keep
    the DSP math identical but move it off the UI thread.
-16. **Sync detection is our own algorithm, so `Sync2Thre` and `SyncThre`
-    keep our defaults (96 and 10, not the original's 20 and 30).**
+16. **Sync detection is our own algorithm, so `Sync2Thre` keeps our
+    default (96, not the original's 20); `SyncThre` is adopted (30).**
     Traced 2026-08-01, **re-traced and partly corrected 2026-08-02**
     (docs/01 §3.2(7)(8)). The original binarises the **raw** video at
     `Sync2Thre` and scans one bright run, one dark run and at most one more
@@ -60,8 +60,10 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     the window, anchoring the bright→dark edge, which is the reference our
     shape check already publishes: same mechanism, one consistent reference
     (docs/01 §3.2(8)).
-    The ini's `FallbackDepth` still drives the dip-depth second chance;
-    pointing it at `fb_mean` instead is a possible follow-up.
+    The ini's `FallbackDepth` drove the dip-depth second chance until
+    2026-08-04; it now drives `fb_mean`, the original's own meaning, at
+    the original's default 30 (the "Sync detect" combo in the Details
+    dialog edits it). `fb_thresh` stays hard-coded at 10 with no ini key.
     The other ten ini defaults are adopted exactly.
     **A step in the sync position is followed on confirmation, and every
     other fallback result is rate-limited rather than rejected** (added
@@ -160,7 +162,7 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
    like the original. Filename changed 2026-08-01, user decision.)
    Sections, value encodings and the `[Set]`/`[Wave]`/`[Form]`/`[Dir]` keys
    still follow the original schema, but the file is no longer *shared*
-   with the original program, because two keys have diverged in meaning
+   with the original program, because one key has diverged in meaning
    (#16). Both programs parse either file without complaint, so a shared
    file would let each silently mis-tune the other.
    **The six tuning keys are also renamed** (user decision, 2026-08-01,

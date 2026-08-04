@@ -29,14 +29,16 @@ void settings_defaults(KgSettings &s)
      * TIniFile::ReadInteger fallback arguments in its ini loader
      * (docs/01-program-analysis.md sec. 6). Do not "tidy" them.
      *
-     * Two exceptions, dark_threshold and fallback_depth: the keys exist in both
-     * programs and parse identically, but our detector computes those
-     * two quantities differently (moving average vs binarised raw video;
-     * dip-depth vs an absolute bound on a boxcar mean), so the
-     * original's 20 and 30 do not carry over - they cost 1550 of 1851
-     * lines on an off-air recording. See DEVIATIONS.md #16. */
+     * One exception, dark_threshold: the key exists in both programs and
+     * parses identically, but our detector computes that quantity
+     * differently (moving average vs binarised raw video), so the
+     * original's 20 does not carry over - it costs 1550 of 1851 lines on
+     * an off-air recording. See DEVIATIONS.md #16.
+     * fallback_depth is NO LONGER an exception: since 2026-08-04 it feeds
+     * fb_mean, the same boxcar-mean bound the original's SyncThre feeds,
+     * so the original's default 30 carries exactly. */
     s.dark_threshold = 96;  /* ours, cf. Sync2Thre 20 */
-    s.fallback_depth = 10;  /* ours, cf. SyncThre 30; = 20*0+10, "Strict" */
+    s.fallback_depth = 30;  /* = SyncThre: 20*1+10, "Normal" */
     s.release_after  = 10;  /* LReSycn:  invalid lines -> drop lock   */
     s.lock_after     = 5;   /* RReSycn:  valid lines -> declare lock  */
     s.max_jump       = 20;  /* SyncWidth: samples of position jump    */
@@ -57,7 +59,8 @@ SyncParams sync_params_from_settings(const KgSettings &s)
     sp.max_coast    = s.release_after;
     sp.lock_hyst    = s.lock_after;
     sp.dark_th      = s.dark_threshold;
-    sp.fb_thresh    = s.fallback_depth;
+    sp.fb_mean      = s.fallback_depth;   /* SyncThre's own quantity:
+                        the dip-depth fb_thresh keeps its hard-coded 10 */
     sp.fallback_win = 40 * (s.syn + 1) / (s.rpm == 1 ? 2 : 1);
     return sp;
 }
@@ -165,9 +168,11 @@ SettingsSource settings_load_from(const std::string &own_path,
      * unambiguous preferences below are imported.
      *
      * Two reasons, and the second is the one that bites:
-     *  - Sync2Thre and SyncThre exist in both programs and parse fine,
-     *    but feed differently-shaped formulas here, so the original's
-     *    values mis-tune our detector (DEVIATIONS.md #16).
+     *  - Sync2Thre exists in both programs and parses fine, but feeds a
+     *    differently-shaped formula here, so the original's value
+     *    mis-tunes our detector (DEVIATIONS.md #16). The rest of the
+     *    block is held back with it, partly to keep one rule ("the
+     *    tuning block does not migrate"), mostly because of the second:
      *  - A kgfax.ini next to the executable may well have been written by
      *    an OLDER BUILD OF THIS PROGRAM, back when LReSycn/RReSycn were
      *    swapped and SyncWidth/DetTime were on different scales. Such a

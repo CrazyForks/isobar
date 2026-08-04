@@ -643,8 +643,8 @@ original's are opaque, two are typos, and two actively mislead (see
 | `DetTime` | `ToneBlocks` |
 
 `DirName`, `rpm`, `syn`, `CycleGet`, `WaveDev` and `FormX`/`FormY` keep their
-names. Ten of the twelve defaults are adopted as-is; `Sync2Thre` and `SyncThre`
-are the exceptions (`DEVIATIONS.md` #16). `core/settings.cpp`
+names. Eleven of the twelve defaults are adopted as-is; `Sync2Thre` is the
+one exception (`DEVIATIONS.md` #16). `core/settings.cpp`
 `settings_read_kgfax()` still reads the original's names, for the one-time
 import.
 

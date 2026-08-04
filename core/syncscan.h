@@ -47,12 +47,13 @@ struct FaxImage {
 
 /* Tunable sync-scan thresholds. The defaults are the original program's
  * own ini defaults, read out of the binary's ReadInteger calls
- * (docs/01-program-analysis.md sec. 6) - except dark_th and fb_thresh,
- * which stay at ours because our detector computes those two quantities
- * differently from the original's (DEVIATIONS.md #16).
+ * (docs/01-program-analysis.md sec. 6) - except dark_th, which stays at
+ * ours because our detector computes that quantity differently from the
+ * original's, and fb_thresh, which is our own second-chance search with
+ * no ini key at all (DEVIATIONS.md #16).
  * The GUI's "Details" dialog reaches these via the settings file
  * (docs/01 sec. 5-6):
- *   Sync2Thre -> dark_th       SyncThre  -> fb_thresh
+ *   Sync2Thre -> dark_th       SyncThre  -> fb_mean
  *   SyncWidth -> search_win    (samples of allowed sync-position jump)
  *   LReSycn   -> max_coast     (invalid lines before lock is dropped)
  *   RReSycn   -> lock_hyst     (valid lines before lock is declared)
@@ -77,11 +78,13 @@ struct SyncParams {
     int fb_thresh;    /*   10: min dip depth below window mean for a
                         valid fallback edge - our own second-chance
                         search, tried only when the ported one below
-                        declines (cf. SyncThre; DEVIATIONS #16)       */
+                        declines; hard-coded, no ini key (DEVIATIONS
+                        #16)                                            */
     int fb_mean;      /*   30: the original's SyncThre, in its own
                         units at last - max boxcar mean (0..255 over
                         the binarised video) for a valid edge on the
-                        ported fallback (docs/01 sec. 3.2(8))         */
+                        ported fallback (docs/01 sec. 3.2(8)); this is
+                        what the ini's FallbackDepth sets              */
 };
 
 SyncParams sync_default_params();
