@@ -1369,8 +1369,11 @@ static void cb_quit(Fl_Widget *, void *ud)
  * GOTCHA: plain Fl_Group does NOT offset its children - child x/y are
  * window coordinates. So the VCL parent-relative Left/Top values must
  * be added to the group origin (see RX/PAR/LP offsets below).
- * Fl_Scroll is the exception: it translates its children, so the
- * FaxView is created at (0,0) like VCL Image1. */
+ * Fl_Scroll is no exception in FLTK 1.4: its children are also window
+ * coordinates (scroll_to() physically moves them), so the FaxView sits
+ * at the scroll's inner-box origin, not (0,0). At (0,0) the child
+ * bounding box pokes above/left of the frame and FLTK shows both
+ * scrollbars permanently. */
 
 /* one LED row inside Panel1: text label at left, 17x9 LED at x=72;
  * returns the LED box so decode state can recolor it */
@@ -1390,7 +1393,9 @@ static void build_ui(AppState *app)
     /* ScrollBox1 (5,8,764,504) with Image1 (760x500) inside */
     Fl_Scroll *scroll = new Fl_Scroll(5, 8, 764, 504);
     scroll->box(FL_DOWN_BOX);
-    app->view = new FaxView(0, 0, 760, 500);
+    app->view = new FaxView(scroll->x() + Fl::box_dx(scroll->box()),
+                            scroll->y() + Fl::box_dy(scroll->box()),
+                            760, 500);
     app->view->set_live_click_cb(cb_live_click, app);
     scroll->end();
 
