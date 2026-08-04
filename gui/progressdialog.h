@@ -12,12 +12,12 @@
 #ifndef ISOBAR_PROGRESSDIALOG_H
 #define ISOBAR_PROGRESSDIALOG_H
 
-/* Shows the dialog (centered on parent_w/h) with "Processing...".
- * Destruct to hide + tear down. While up, the scope pumps the event
- * loop in update() so the window repaints. */
+/* Shows the dialog (centered on the parent at parent_x/y/w/h) with
+ * "Processing...". Destruct to hide + tear down. While up, the scope
+ * pumps the event loop in update() so the window repaints. */
 class ProgressScope {
 public:
-    ProgressScope(int parent_w, int parent_h);
+    ProgressScope(int parent_x, int parent_y, int parent_w, int parent_h);
     ~ProgressScope();
     ProgressScope(const ProgressScope &) = delete;
     ProgressScope &operator=(const ProgressScope &) = delete;

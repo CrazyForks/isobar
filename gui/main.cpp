@@ -8,8 +8,9 @@
  *
  * Functional so far:
  *   Load data  -> open .syn file (menu item 1)
- *   [dev] WAV  -> decode a WAV through the M0 pipeline (menu item 2 of
- *                 the same button; DEV AID, kept for offline testing)
+ *   [dev] WAV  -> decode a WAV through the batch pipeline in core/
+ *                 (menu item 2 of the same button; DEV AID, kept for
+ *                 offline testing)
  *   Save data  -> save .syn file
  *   Clear      -> clear the preview
  *   Details... -> Form4 settings dialog, persisted to isobar.ini (next
@@ -38,8 +39,9 @@
  *
  * Decode runs on a worker thread and hands the finished image back
  * with Fl::awake(); only the UI thread touches widgets (deviation #1
- * in DEVIATIONS.md). Decode progress is reported in the window title
- * (the original uses a separate progress dialog, Form2 - future work).
+ * in DEVIATIONS.md). Decode progress is reported in the window title;
+ * the original's Form2 progress dialog (gui/progressdialog.*) covers
+ * the save/print/auto-save renders instead.
  *
  * Usage: ./isobar-gui [file.syn]
  *        ./isobar-gui --test-scope [file.wav]
@@ -57,6 +59,8 @@
  *        ./isobar-gui --test-details
  *        ./isobar-gui --test-quit-save
  *        ./isobar-gui --dump-settings
+ *        ./isobar-gui --list-devices
+ *        ./isobar-gui --test-scan [device] [seconds] [auto]
  *   --test-scope (DEV AID): starts a WAV decode immediately, as if
  *     Load data > [dev] Decode WAV had been picked. Default input is
  *     "jmh sample.wav".
@@ -395,7 +399,8 @@ static void cb_save_image(Fl_Widget *, void *ud)
     std::vector<uint8_t> rgb;
     int w, h;
     {   /* Form2 progress dialog around the render (docs/01 sec. 4) */
-        ProgressScope ps(app->win->w(), app->win->h());
+        ProgressScope ps(app->win->x(), app->win->y(),
+                         app->win->w(), app->win->h());
         render_export_rgb(app->image, scale_of[app->export_kind],
                           app->pal, rgb, &w, &h);
         ps.update(1.0);
@@ -460,7 +465,8 @@ static void cb_print(Fl_Widget *, void *ud)
     std::vector<uint8_t> rgb;
     int w, h;
     {   /* Form2 progress dialog around the raster render (docs/01 §4) */
-        ProgressScope ps(app->win->w(), app->win->h());
+        ProgressScope ps(app->win->x(), app->win->y(),
+                         app->win->w(), app->win->h());
         render_print_rgb(img, app->pal, rgb, &w, &h);
         ps.update(1.0);
     }
@@ -620,7 +626,7 @@ static void cb_details(Fl_Widget *, void *ud)
 }
 
 /* rpm/syn combos: keep settings live (saved on quit; rpm also picks
- * the decode line rate once 60 rpm support lands) */
+ * the decode line rate: 120 or 60 rpm) */
 static void cb_choice(Fl_Widget *, void *ud)
 {
     AppState *app = (AppState *)ud;
@@ -659,6 +665,12 @@ struct ToneMsg {
 
 static AppState *g_app;   /* for the C-style core callbacks */
 static int g_last_led = -1;   /* last LED state posted (-1 = none) */
+/* File-decode gate: while a WAV decode runs on its worker thread, the
+ * (always-on) audio thread skips the scope + tone feeding so the two
+ * do not race on g_streak3/4 / g_tone_state or double-feed the scope.
+ * Written by the UI thread (start_decode / cb_decode_done), read by
+ * the audio thread, so atomic like g_recording below. */
+static std::atomic<bool> g_file_decode{false};
 
 static void cb_progress(void *p)
 {
@@ -766,6 +778,7 @@ static void cb_decode_done(void *p)
     DecodeDone *msg = (DecodeDone *)p;
     AppState *app = msg->app;
     app->decoding = false;
+    g_file_decode = false;   /* audio thread resumes scope + tones */
 
     if (msg->img) {
         app->image = *msg->img;
@@ -816,6 +829,7 @@ static void decode_worker(std::string path, KgSettings cfg, bool track)
 static void start_decode(AppState *app, const char *path)
 {
     app->decoding = true;
+    g_file_decode = true;   /* audio thread yields scope + tones */
     g_last_led = -1;
     g_tone_state = 0;
     g_streak3 = 0;
@@ -882,7 +896,7 @@ struct LevelMsg {
 static void cb_level(void *p)
 {
     LevelMsg *msg = (LevelMsg *)p;
-    if (!msg->app->recording) {
+    if (!msg->app->recording && !msg->app->decoding) {
         char buf[64];
         snprintf(buf, sizeof buf, "listening: level %.0f", msg->rms);
         set_title(msg->app, buf);
@@ -974,14 +988,17 @@ static void live_sample(double s, void *ud)
     ls->blk[ls->bn++] = ls->dec.bpf_out;
     if (ls->bn == FFT_N) {
         ls->bn = 0;
-        scope_block(ls->blk);
+        if (!g_file_decode)   /* the decode worker owns the scope now */
+            scope_block(ls->blk);
     }
 
     /* tone levels on the 8000 S/s video (before 60 rpm halving) */
-    double l300, l450;
-    for (uint8_t b : ls->vbuf)
-        if (ls->tones.feed(b, l300, l450))
-            tone_levels(l300, l450);
+    if (!g_file_decode) {   /* the decode worker owns tone_levels now */
+        double l300, l450;
+        for (uint8_t b : ls->vbuf)
+            if (ls->tones.feed(b, l300, l450))
+                tone_levels(l300, l450);
+    }
 
     const std::vector<uint8_t> *scan_in = &ls->vbuf;
     if (ls->rpm == 1) {
@@ -1160,7 +1177,8 @@ static void auto_save(AppState *app)
         std::vector<uint8_t> rgb;
         int w, h;
         {   /* Form2 progress dialog around the bmp render */
-            ProgressScope ps(app->win->w(), app->win->h());
+            ProgressScope ps(app->win->x(), app->win->y(),
+                         app->win->w(), app->win->h());
             render_export_rgb(app->image, scale_of[app->autosave_size],
                               app->pal, rgb, &w, &h);
             ps.update(1.0);
@@ -1299,7 +1317,8 @@ static void cb_input_device(Fl_Widget *, void *ud)
         return;
     /* switch the running capture to the newly selected device, showing
      * the Form10 notice while the stream is torn down + reopened */
-    show_notice(app->win->w(), app->win->h());
+    show_notice(app->win->x(), app->win->y(),
+                app->win->w(), app->win->h());
     g_audio.stop();      /* pauses the stream; callback is done after */
     delete g_live;
     g_live = 0;
@@ -1475,9 +1494,11 @@ static int clampi(int v, int lo, int hi)
 /* --test-progress demo: drive a Form2 progress bar 0 -> 1 over ~1 s.
  * (dev aid only; the real renders wrap render_export_rgb in a
  * ProgressScope instead.) */
-static void animate_progress_demo(int parent_w, int parent_h)
+static void animate_progress_demo(int parent_x, int parent_y,
+                                  int parent_w, int parent_h)
 {
-    ProgressScope *ps = new ProgressScope(parent_w, parent_h);
+    ProgressScope *ps = new ProgressScope(parent_x, parent_y,
+                                          parent_w, parent_h);
     for (int i = 0; i <= 20; i++) {
         ps->update(i / 20.0);
         Fl::wait(0.05);   /* ~50 ms per step -> ~1 s total */
@@ -1659,13 +1680,15 @@ int main(int argc, char **argv)
         /* DEV AID: pop the Form10 recording-notice for 2 s (visual
          * check of the device-switch popup), then dismiss it. */
         Fl::check();
-        show_notice(app.win->w(), app.win->h());
+        show_notice(app.win->x(), app.win->y(),
+                    app.win->w(), app.win->h());
         Fl::add_timeout(2.0, [](void *) { hide_notice(); }, 0);
     } else if (argc > 1 && strcmp(argv[1], "--test-progress") == 0) {
         /* DEV AID: animate the Form2 progress bar 0 -> 1 over ~1 s
          * (visual check of the render progress dialog). */
         Fl::check();
-        animate_progress_demo(app.win->w(), app.win->h());
+        animate_progress_demo(app.win->x(), app.win->y(),
+                              app.win->w(), app.win->h());
     } else if (argc > 1 && strcmp(argv[1], "--test-autosave") == 0) {
         /* DEV AID: --test-autosave [file.syn] [fmt] [size]: load the
          * .syn, arm auto-save (CycleGet) pointed at /tmp, fire

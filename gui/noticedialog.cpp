@@ -16,7 +16,7 @@ namespace {
 Fl_Double_Window *g_win = 0;
 }
 
-void show_notice(int parent_w, int parent_h)
+void show_notice(int parent_x, int parent_y, int parent_w, int parent_h)
 {
     if (g_win)
         return;   /* already up */
@@ -29,9 +29,9 @@ void show_notice(int parent_w, int parent_h)
     b->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     g_win->end();
     g_win->set_non_modal();
-    /* center on the parent window */
-    int px = (parent_w - 195) / 2;
-    int py = (parent_h - 43) / 2;
+    /* center on the parent window (position() is absolute screen) */
+    int px = parent_x + (parent_w - 195) / 2;
+    int py = parent_y + (parent_h - 43) / 2;
     if (px < 0) px = 0;
     if (py < 0) py = 0;
     g_win->position(px, py);

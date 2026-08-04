@@ -16,7 +16,8 @@ struct ProgressWin {
     Fl_Progress *bar;
 };
 
-ProgressScope::ProgressScope(int parent_w, int parent_h) : win(0)
+ProgressScope::ProgressScope(int parent_x, int parent_y,
+                             int parent_w, int parent_h) : win(0)
 {
     ProgressWin *pw = new ProgressWin;
     /* Form2: client 328x48 */
@@ -32,8 +33,9 @@ ProgressScope::ProgressScope(int parent_w, int parent_h) : win(0)
     pw->bar->maximum(1);
     pw->bar->value(0);
     pw->win->end();
-    int px = (parent_w - 328) / 2;
-    int py = (parent_h - 48) / 2;
+    /* center on the parent window (position() is absolute screen) */
+    int px = parent_x + (parent_w - 328) / 2;
+    int py = parent_y + (parent_h - 48) / 2;
     if (px < 0) px = 0;
     if (py < 0) py = 0;
     pw->win->position(px, py);

@@ -10,8 +10,9 @@
 
 /* Show the notice window (non-modal, centered on the parent) and keep
  * it up until hide_notice() is called. Idempotent (a second show while
- * already up is a no-op). parent_w/h center the notice on that window. */
-void show_notice(int parent_w, int parent_h);
+ * already up is a no-op). parent_x/y/w/h locate the parent window on
+ * screen; the notice is centered on it (position() is absolute). */
+void show_notice(int parent_x, int parent_y, int parent_w, int parent_h);
 
 /* Hide and tear down the notice window if it is up. Safe to call when
  * not shown. */

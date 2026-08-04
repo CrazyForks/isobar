@@ -166,6 +166,7 @@ int autosave_dialog_run(std::string *dirname, int *cycleget,
     if (d.size < 0 || d.size > 2)
         d.size = 0;
     (d.fmt == 1 ? fbmp : fsyn)->setonly();
+    (d.size == 2 ? r2 : (d.size == 1 ? r1 : r0))->setonly();
     cb_fmt(fsyn, &d);   /* apply initial syn/bmp enable state */
 
     dlg->show();
