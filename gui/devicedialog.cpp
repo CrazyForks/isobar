@@ -18,15 +18,15 @@
 
 namespace {
 struct Dlg {
-    int sel;   /* chosen row, -1 = cancelled */
+    int sel;          /* chosen row, -1 = cancelled */
+    Fl_Browser *list; /* passed explicitly - child(0) order is fragile */
 };
 }
 
 static void cb_select(Fl_Widget *w, void *ud)
 {
     Dlg *d = (Dlg *)ud;
-    Fl_Browser *b = (Fl_Browser *)w->parent()->child(0);
-    d->sel = b->value() - 1;   /* browser rows are 1-based */
+    d->sel = d->list->value() - 1;   /* browser rows are 1-based */
     w->window()->hide();
 }
 
@@ -51,6 +51,7 @@ int device_dialog_run(int current)
     dlg->set_modal();
 
     Fl_Hold_Browser *list = new Fl_Hold_Browser(8, 8, 273, 121);
+    d.list = list;
     list->textsize(11);
     list->add("Default input device");
     for (const AudioDeviceInfo &dev : devs) {

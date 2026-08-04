@@ -13,7 +13,7 @@ Both options share the same first milestone (M0: framework-agnostic C++ DSP core
 
 | | **A: Qt + RtAudio** | **B: Swift + AppKit** |
 |---|---|---|
-| Platforms | macOS, Linux, *BSD (one codebase) | macOS only |
+| Platforms | macOS, Linux, Windows (one codebase) | macOS only |
 | Total effort | ~6–10 weeks | ~4–7 weeks |
 | Cost of adding Linux later | ~0 (already done) | Full GUI rewrite (re-pay ~40%) |
 | Replica fidelity (2009 VCL look) | High — QWidget ≈ VCL | Lower — AppKit fights the retro look |

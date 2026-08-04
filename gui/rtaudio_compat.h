@@ -82,4 +82,27 @@ inline bool isobar_start_stream(RtAudio &rt, std::string *err)
 #endif
 }
 
+/* Stop the stream, returning true + setting err on failure. Callers that
+ * merely tear down may pass err = nullptr (best-effort); a caller that
+ * relies on the stop (only one stream runs at a time) must check the
+ * return, or a failed stop leaves two streams feeding callbacks. */
+inline bool isobar_stop_stream(RtAudio &rt, std::string *err)
+{
+#if defined(RTAUDIO_VERSION_MAJOR) && RTAUDIO_VERSION_MAJOR >= 6
+    if (rt.stopStream() != RTAUDIO_NO_ERROR) {
+        if (err) *err = rt.getErrorText();
+        return false;
+    }
+    return true;
+#else
+    try {
+        rt.stopStream();
+    } catch (const RtAudioError &e) {
+        if (err) *err = e.what();
+        return false;
+    }
+    return true;
+#endif
+}
+
 #endif

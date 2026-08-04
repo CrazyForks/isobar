@@ -406,7 +406,11 @@ static void cb_save_image(Fl_Widget *, void *ud)
         ps.update(1.0);
     }
     if (app->export_kind == 0) {
-        /* "current view": the 760-px-wide preview image */
+        /* kind 0 ("Current view", the original's own caption): the WHOLE
+         * image as an upright raster scaled to 760 px wide, NOT the
+         * sideways column view the preview actually shows. The label is
+         * kept for fidelity - the original's first option is named just
+         * as loosely (docs/01 sec. 4 "Save image"). */
         Fl_RGB_Image full(rgb.data(), w, h, 3);
         int dh = (int)((long)h * 760 / w);
         if (dh < 1) dh = 1;
@@ -434,7 +438,7 @@ static void cb_save_image(Fl_Widget *, void *ud)
 /* ---- Print (Button7, docs/01 sec. 4 "Print") ---- */
 
 /* the exact print bitmap: full RASTER (x = pixel in line, y = line),
- * palette applied (kgfax.exe.c 10293-10321). Renders the received
+ * palette applied, like the original. Renders the received
  * lines only - the original renders all 2280 lines with a black tail
  * (deliberate difference, noted in docs/01). */
 static void render_print_rgb(const FaxImage &img, const uint8_t pal[256][3],
@@ -560,9 +564,9 @@ static void cb_vertical(Fl_Widget *, void *ud)
         const FaxImage &old = app->backup;
         const int n = (int)old.lines.size();
         /* new[l][p] = old[1499-p][l-390] for l in [390,1890); lines
-         * 0..389 stay black, nothing beyond 1889 (kgfax.exe.c
-         * 11048-11098; the pan offset dword_4F25F0 is normally 0 and
-         * reset by both paths, so it is not ported) */
+         * 0..389 stay black, nothing beyond 1889 (the original's
+         * Vertical rotate; its pan offset is normally 0 and reset by
+         * both paths, so it is not ported) */
         FaxImage rot;
         rot.lines.assign(1890, std::vector<uint8_t>(FaxImage::WIDTH, 0));
         for (int l = 390; l < 1890; l++)
@@ -607,7 +611,7 @@ static void cb_clear(Fl_Widget *, void *ud)
     AppState *app = (AppState *)ud;
     app->image = FaxImage();
     reset_rotate(app);
-    app->view->reset_zoom();   /* Clear button resets zoom (kgfax.exe.c 5614) */
+    app->view->reset_zoom();   /* Clear button resets zoom, like the original */
     if (app->recording)
         app->view->live_begin();   /* clear columns, stay in live mode */
     else
@@ -876,8 +880,10 @@ struct LiveState {
     int      rpm;
     double   blk[FFT_N];         /* scope block accumulator           */
     int      bn;
-    double   sum_sq;             /* input level stats (dev aid)       */
-    long     nsamp;
+    /* input level stats (dev aid, --test-scan): written on the audio
+     * thread, read on the UI thread, hence atomic */
+    std::atomic<double> sum_sq;
+    std::atomic<long>   nsamp;
     double   lvl_sq;             /* level meter: current window       */
     long     lvl_n;
 };
@@ -972,7 +978,10 @@ static void live_sample(double s, void *ud)
 {
     /* runs on the audio thread, once per 22050 Hz sample */
     LiveState *ls = (LiveState *)ud;
-    ls->sum_sq += s * s;
+    /* single writer, so a load+store is race-free (C++17 atomic<double>
+     * has no +=) */
+    ls->sum_sq.store(ls->sum_sq.load(std::memory_order_relaxed) + s * s,
+                     std::memory_order_relaxed);
     ls->nsamp++;
     ls->lvl_sq += s * s;
     ls->lvl_n++;
@@ -1232,8 +1241,12 @@ static void cb_autoctl(Fl_Widget *w, void *ud)
 {
     AppState *app = (AppState *)ud;
     app->autoctl = ((Fl_Toggle_Button *)w)->value() != 0;
-    if (app->autoctl)
-        start_audio(app);   /* tones can only be heard while listening */
+    /* tones can only be heard while listening; if audio will not start,
+     * pop the button back up like record_on does for Scan */
+    if (app->autoctl && !start_audio(app)) {
+        app->autoctl = false;
+        ((Fl_Toggle_Button *)w)->value(0);
+    }
 }
 
 /* Auto save (SpeedButton3, docs/01 sec. 5): pressing the button DOWN

@@ -86,11 +86,13 @@ struct LiveScan {
     void request_finish();
     bool finish_done() const { return fin_done.load(); }
 
-    /* stats (same meanings as FaxImage) */
-    int lines_locked;
-    int lines_corrected;
-    int lines_coasted;
-    int relocks;
+    /* stats (same meanings as FaxImage). Atomic: pump() writes them on
+     * the audio thread while the UI thread reads them on Scan-off
+     * (record_off) and in --test-scan. */
+    std::atomic<int> lines_locked;
+    std::atomic<int> lines_corrected;
+    std::atomic<int> lines_coasted;
+    std::atomic<int> relocks;
 
     int lines_emitted() const;
 

@@ -79,8 +79,9 @@ static int run_case(const std::vector<uint8_t> &video, size_t chunk,
     }
     fprintf(stderr, "chunk %5zu %-6s: %4zu lines (L%d C%d P%d R%d) %s\n",
             chunk, async_finish ? "async" : "direct",
-            c.img.lines.size(), ls.lines_locked,
-            ls.lines_corrected, ls.lines_coasted, ls.relocks,
+            c.img.lines.size(), ls.lines_locked.load(),
+            ls.lines_corrected.load(), ls.lines_coasted.load(),
+            ls.relocks.load(),
             ok ? "OK" : "MISMATCH");
     if (!ok) {
         fprintf(stderr, "  ref: %4zu lines (L%d C%d P%d R%d), first bad "

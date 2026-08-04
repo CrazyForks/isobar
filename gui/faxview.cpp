@@ -70,8 +70,8 @@ void FaxView::dev_zoom_to(int level)
         zoom_in(380, 250);
 }
 
-/* left click = zoom in, centered on the click (kgfax.exe.c
- * 8498-8578); clamped at level 2 with no re-render past the top */
+/* left click = zoom in, centered on the click (docs/01 sec. 4
+ * "Zoom/pan"); clamped at level 2 with no re-render past the top */
 void FaxView::zoom_in(int cx, int cy)
 {
     if (++zoom_ > 2) {
@@ -189,8 +189,8 @@ void FaxView::render()
         return;
     }
 
-    /* Column view in all zoom levels (docs/01 sec. 4 "Zoom/pan";
-     * kgfax.exe.c 8933-9021): screen x = line axis, y = pixel axis,
+    /* Column view in all zoom levels (docs/01 sec. 4 "Zoom/pan"):
+     * screen x = line axis, y = pixel axis,
      * line start at the bottom; only the sampling changes. Columns
      * past the last line stay black, like the original's zeroed
      * buffer. Fixed 760x500 bitmap. */

@@ -14,17 +14,23 @@ std::vector<AudioDeviceInfo> audio_input_devices()
     /* Default API: RtAudio picks the best compiled-in backend per platform
      * (CoreAudio on macOS, ALSA/Pulse on Linux, WASAPI/DS on Windows) —
      * avoids hardcoding one platform's API enum. */
-    RtAudio rt;
-    for (unsigned int id : isobar_device_ids(rt)) {
-        RtAudio::DeviceInfo inf = rt.getDeviceInfo(id);
-        if (inf.inputChannels == 0)
-            continue;
-        AudioDeviceInfo d;
-        d.id = id;
-        d.name = inf.name;
-        d.in_channels = inf.inputChannels;
-        d.is_default = inf.isDefaultInput;
-        out.push_back(d);
+    /* A broken audio subsystem must not kill the app: the v6 ctor throws
+     * when no backend is usable and v5's getDeviceInfo throws per device.
+     * Return what we have (possibly empty) and let the caller alert. */
+    try {
+        RtAudio rt;
+        for (unsigned int id : isobar_device_ids(rt)) {
+            RtAudio::DeviceInfo inf = rt.getDeviceInfo(id);
+            if (inf.inputChannels == 0)
+                continue;
+            AudioDeviceInfo d;
+            d.id = id;
+            d.name = inf.name;
+            d.in_channels = inf.inputChannels;
+            d.is_default = inf.isDefaultInput;
+            out.push_back(d);
+        }
+    } catch (const std::exception &) {
     }
     return out;
 }
@@ -98,9 +104,13 @@ static Stream *open_stream(unsigned int device_id, std::string *err)
     if (!isobar_open_input_stream(*s->rt, &prm, RTAUDIO_SINT16, 22050, &frames,
                                   &Stream::rt_cb, s, err)) {
         unsigned int pref = 48000;
-        RtAudio::DeviceInfo inf = s->rt->getDeviceInfo(device_id);
-        if (inf.preferredSampleRate)
-            pref = inf.preferredSampleRate;
+        try {
+            RtAudio::DeviceInfo inf = s->rt->getDeviceInfo(device_id);
+            if (inf.preferredSampleRate)
+                pref = inf.preferredSampleRate;
+        } catch (const std::exception &) {
+            /* v5 throws here; keep the 48 kHz guess */
+        }
         std::string err2;
         if (!isobar_open_input_stream(*s->rt, &prm, RTAUDIO_SINT16, pref,
                                       &frames, &Stream::rt_cb, s, &err2)) {
@@ -130,10 +140,12 @@ bool LiveAudio::start(unsigned int device_id,
     s->cb = sample_cb;
     s->ud = ud;
 
-    /* only one stream runs at a time */
+    /* only one stream runs at a time; if the old stream refuses to
+     * stop, starting the new one would leave two feeding callbacks */
     if (impl->current && impl->current != s &&
-        impl->current->rt->isStreamRunning())
-        impl->current->rt->stopStream();
+        impl->current->rt->isStreamRunning() &&
+        !isobar_stop_stream(*impl->current->rt, err))
+        return false;
 
     if (!s->rt->isStreamRunning() &&
         !isobar_start_stream(*s->rt, err)) {
@@ -145,9 +157,10 @@ bool LiveAudio::start(unsigned int device_id,
 
 void LiveAudio::stop()
 {
-    /* pause only: keep the stream open (see Stream comment above) */
+    /* pause only: keep the stream open (see Stream comment above);
+     * best-effort - nothing to do with a failure here */
     if (impl->current && impl->current->rt->isStreamRunning())
-        impl->current->rt->stopStream();
+        isobar_stop_stream(*impl->current->rt, nullptr);
 }
 
 void LiveAudio::close()
@@ -155,7 +168,7 @@ void LiveAudio::close()
     for (auto &kv : impl->streams) {
         Stream *s = kv.second;
         if (s->rt->isStreamRunning())
-            s->rt->stopStream();
+            isobar_stop_stream(*s->rt, nullptr);
         if (s->rt->isStreamOpen())
             s->rt->closeStream();
         delete s->rt;
