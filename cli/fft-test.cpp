@@ -1,5 +1,5 @@
 /* fft-test - quick correctness check for core/fft.cpp.
- * Not part of `all`; build with `make fft-test`, run ./fft-test.
+ * Registered with ctest; run via `ctest --test-dir build -R fft-test`.
  *
  * A sine at frequency f sampled at 22050 Hz must peak at bin
  * round(f*4096/22050): 1000 Hz -> bin 186, 2300 Hz -> bin 427.

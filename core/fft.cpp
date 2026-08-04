@@ -7,7 +7,7 @@
 
 static const double PI = 3.14159265358979323846;
 
-void hann_window(double w[FFT_N])
+static void hann_window(double w[FFT_N])
 {
     for (int i = 0; i < FFT_N; i++)
         w[i] = 0.5 - 0.5 * cos(2.0 * PI * i / FFT_N);

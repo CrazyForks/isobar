@@ -247,9 +247,12 @@ inline long sync_anchor(const std::vector<int> &sm, long pos,
  * Darkest fallback_win window anywhere in the line, accepted only if it
  * really is a sync pulse and not just the darkest patch of picture:
  *   - the window must be dark (dark_th), and
- *   - the best rival at least 300 samples away must be dark_th/2
- *     brighter - a real sync pulse wins by a mile, picture content does
- *     not, and
+ *   - it must win clearly: EITHER the best rival at least 300 samples
+ *     away is dark_th/2 brighter (a real sync pulse wins by a mile on a
+ *     chart), OR the window is below sync_dark_floor outright - a
+ *     satellite photo's near-black cloud rivals collapse the margin, so
+ *     "genuinely black" is asked instead (the body's comment has the
+ *     measurements), and
  *   - the dark run it sits in must be a plausible sync pulse WIDTH
  *     (min_pulse..max_pulse), the same bound find_sync_edges applies.
  * The width test is what keeps a chart's wide black margin out: a margin
@@ -333,9 +336,9 @@ inline long sync_line_pulse(const std::vector<int> &sm, long grid,
  * The narrow searches above cannot: the shape check reaches +-search_win
  * (20 samples) and the fallback +-fallback_win/2 (80), while a real step
  * is bigger than either. The 12 kHz off-air recording steps 162 samples
- * between one line and the next and then holds the new position for the
- * rest of the reception; the 44.1 kHz sample does the same at line 930
- * where a new transmission starts. Without this the decoder spends ten
+ * between one line and the next, ten times over the reception; the
+ * 44.1 kHz sample does the same at line 930 where a new transmission
+ * starts. Without this the decoder spends ten
  * or more lines crawling toward the new position - and every one of those
  * lines has the sync strip split across the line's two ends, which is
  * what makes those lines unreadable. On a KiwiSDR or any other networked
@@ -393,7 +396,7 @@ inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
  * The original rejects a fallback result further than SyncWidth from the
  * previous position outright (docs/01 sec. 3.2(8)). We cannot: a real
  * transmission does step further than that - the off-air recording moves
- * ~162 samples four times - and rejecting costs more than it saves
+ * ~162 samples ten times - and rejecting costs more than it saves
  * (measured: mis-phased picture lines 36 -> 211). The distinguisher is
  * that a genuine step PERSISTS while a bad pick does not, so instead of
  * rejecting a far result we take it slowly: search_win/4 samples on the

@@ -22,7 +22,8 @@ const int DEF_FALLBACK_WIN = 160;   /* syn combo default: 20 ms @ 8 kHz */
  * 8-sample moving average, the original binarises the raw video; and our
  * fb_thresh is a dip depth below the local mean where the original's is
  * an absolute bound on a boxcar mean. Its values in our formulas cost
- * 1550 of 1851 lines on an off-air recording - measured, see docs/01. */
+ * 1550 of 1851 lines on an off-air recording - measured, see
+ * DEVIATIONS.md #16. */
 const int DEF_DARK_TH     = 96;     /* cf. Sync2Thre */
 const int DEF_FB_THRESH   = 10;     /* ours: dip depth, second chance */
 /* The original's SyncThre, and it takes the original's value: the ported
@@ -31,8 +32,8 @@ const int DEF_FB_THRESH   = 10;     /* ours: dip depth, second chance */
  * transfers. Measured best on all three fixtures at exactly 30. */
 const int DEF_FB_MEAN     = 30;     /* = SyncThre */
 
-/* Ported fallback shape constants, compiled into the original with no
- * ini key (docs/01 sec. 3.2(8); kgfax.exe.c:5639-5640). */
+/* Ported fallback shape constants, hard-coded in the original with no
+ * ini key (docs/01 sec. 3.2(8)). */
 const int FB_GATE       = 8;        /* dword_4F25E4 */
 const int FB_GATE_LEVEL = 128;      /* dword_4F25E8 */
 

@@ -111,7 +111,8 @@ Install the dependencies first:
 ./build/isobar-decode recording.wav out.pgm
 
 # Or open the GUI (then pick your radio's audio input):
-./build/isobar-gui
+./build/isobar-gui        # Linux / Windows
+open ./build/Isobar.app   # macOS (the GUI builds as a .app bundle)
 ```
 
 On macOS the GUI builds as a proper `Isobar.app` bundle (with icon and the
@@ -142,7 +143,8 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 **v1.5.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
-for the milestone map (M0–M5 done; M6 = packaging & cross-platform CI).
+for the milestone map (M0–M5 done; M6 = validation & release, largely
+done — two validation items still open).
 Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —
 via GitHub Actions (`.github/workflows/`); tags `v*.*.*` produce five
 self-contained native release packages (two macOS `.dmg`s, a Windows `.zip`,

@@ -24,7 +24,7 @@ and the implementation plans.
 
 ## Status
 
-Phase: **working software, pre-release**. Milestone status lives in
+Phase: **working software — v1.5.0 released**. Milestone status lives in
 `../ROADMAP.md`; day-to-day state in `../SESSION-LOG.md` (private — not
 published; see "What gets published" below).
 
@@ -53,8 +53,9 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (packaging & cross-platform CI) done — v1.5.0
-released, CI green on macOS/Linux/Windows, Intel and ARM. **First real reception
+workflow is complete; M6 (validation & release) is mostly done — v1.5.0
+released, CI green on macOS/Linux/Windows, Intel and ARM; the golden-reference
+comparison and the gappy-source `LockAfter` change stay open (`../ROADMAP.md`). **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
 there are five committed test fixtures, each covering something the others
@@ -112,8 +113,9 @@ the five committed test fixtures (`jmh-sample-short.wav`,
 `jmh-offair-12k.wav`, `jmh-slew-12k.wav`, `jmh-phasing-16k.wav`,
 `jmh-himawari-12k.wav` — short excerpts of off-air receptions, each kept
 small enough that every clone and CI checkout can afford it; the full
-recordings they come from stay local and gitignored), `LICENSE`, `NOTICE`,
-`ROADMAP.md`, and this index.
+recordings they come from stay local and gitignored), `README.md`,
+`PORTING.md`, `DEVIATIONS.md`, `LICENSE`, `NOTICE`, `ROADMAP.md`, and
+this index.
 
 **Private (gitignored, never published):**
 - The original `kgfax.exe` binary, its Hex-Rays decompile (`kgfax.exe.c`),

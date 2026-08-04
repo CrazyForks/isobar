@@ -43,11 +43,6 @@ ToneDetect::ToneDetect()
     block_n = 0;
 }
 
-void ToneDetect::reset()
-{
-    *this = ToneDetect();
-}
-
 /* envelope LPF: documented taps (docs/01 sec. 3.2(5)) */
 static double envelope(ToneDetect::Resonator &r, double sq)
 {

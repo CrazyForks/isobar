@@ -13,13 +13,16 @@
  * - a dark run is only known to be a sync pulse candidate once a
  *   non-dark sample ends it, so edge decisions lag by up to max_pulse
  * - "no edge near the predicted position" is only decidable once bytes
- *   past expected+search_win+max_pulse have arrived
+ *   past expected+search_win+fallback_win/2+max_pulse have arrived
+ *   (plus up to 3*win/2 more when the anchor refinement runs)
  * - lock acquisition waits until the whole hysteresis chain is decidable
  * - a completed line is held back until the NEXT line has arrived, because
  *   sync_step_lock() confirms a step with one line of lookahead; finish()
  *   releases the held line at end of stream
- * Buffers keep the whole stream (~0.5 MB/min of video) - fine for a
- * 19-minute reception; reset() between receptions to free it.
+ * Buffers keep the whole stream (~2.4 MB/min: video bytes plus the
+ * same-length smoothed int vector) - fine for a 19-minute reception;
+ * the GUI frees it by deleting and re-creating the LiveState between
+ * receptions.
  */
 #ifndef ISOBAR_LIVE_H
 #define ISOBAR_LIVE_H

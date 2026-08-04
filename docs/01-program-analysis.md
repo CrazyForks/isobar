@@ -185,8 +185,8 @@ Runs once per 2205-sample (100 ms) block:
 
    So it is **not** a plain minimum-mean search: it looks for a dark window
    whose right edge is immediately followed by mostly-bright samples — a
-   dark→bright transition. Both constants are compiled in (set at
-   `kgfax.exe.c:5639-5640`), with no ini key.
+   dark→bright transition. Both constants are hard-coded in the
+   original, with no ini key.
 
    - **Validity**: `SyncThre > m1` — an absolute bound on a boxcar mean,
      *not* a dip depth relative to a local average.

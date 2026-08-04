@@ -189,7 +189,7 @@ set(GUI_SRC
     gui/audio.cpp         gui/audio.h)
 
 # --- isobar-decode: CLI decoder (core only) ----------------------------------
-add_executable(isobar-decode cli/kgfax-decode.cpp)
+add_executable(isobar-decode cli/isobar-decode.cpp)
 target_link_libraries(isobar-decode PRIVATE isobar_core)
 
 # --- isobar-gui: full GUI (core + FLTK + RtAudio) ----------------------------
@@ -305,7 +305,7 @@ endif()
 # Ship the two user-facing binaries. On macOS the GUI is a .app bundle; the
 # BUNDLE destination puts the whole Isobar.app on the .dmg. On Linux/Windows
 # the plain executables land in the package's bin/ (flat layout for a portable
-# release — the runtime looks for kgfax.ini next to the exe either way).
+# release — the runtime looks for isobar.ini next to the exe either way).
 install(TARGETS isobar-gui isobar-decode
         RUNTIME DESTINATION bin
         BUNDLE  DESTINATION .)
@@ -347,7 +347,7 @@ add_isobar_test(slew-test)
 add_isobar_test(satellite-test)
 add_isobar_test(reacq-test)
 
-# resample-test needs filters.cpp directly in addition to core.
+# resample-test exercises the streaming resampler (core/resample.cpp).
 add_executable(resample-test cli/resample-test.cpp)
 target_link_libraries(resample-test PRIVATE isobar_core)
 add_test(NAME resample-test COMMAND resample-test)
@@ -362,10 +362,9 @@ isobar_link_rtaudio(audio-restart-test)
 
 # --- Packaging (CPack) -------------------------------------------------------
 # Per-OS release formats (decision 2026-07-29): macOS = DragNDrop (.dmg),
-# Windows = ZIP (.zip), Linux = TBZ2 (portable tarball). AppImage is left out
-# for now — it needs linuxdeploy/appimagetool at package time, which is extra
-# machinery for a hobbyist release; the tarball + the distro's own FLTK/RtAudio
-# is the simple Linux story. Run `cpack` after a build to produce packages.
+# Windows = ZIP (.zip). Linux releases are NOT made here: the shipped
+# deliverable is an AppImage built by release.yml's own step (v1.0.1+);
+# CPack's Linux TBZ2 remains only as a local `cpack` convenience.
 set(CPACK_PACKAGE_NAME "Isobar")
 set(CPACK_PACKAGE_VENDOR "Sara Sakuragawa")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")

@@ -77,6 +77,7 @@ videoplayback.mp4
 # Editor/agent scratch
 .zcode/
 .kimi-code/
+.claude/
 __pycache__/
 *.pyc
 

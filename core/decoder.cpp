@@ -122,7 +122,7 @@ std::vector<uint8_t> fm_decode(const std::vector<double> &samples,
                 if (tones.feed(out[vi], l300, l450))
                     tone(l300, l450);
         }
-        if (progress && tick > 0 && (i % tick) == tick - 1)
+        if (progress && (i % tick) == tick - 1)
             progress((double)(i + 1) / FmDecoder::FS_IN,
                      (double)total / FmDecoder::FS_IN);
     }

@@ -12,9 +12,6 @@
 static const int FFT_N    = 4096;   /* transform size */
 static const int FFT_BINS = 2048;   /* usable bins (one-sided) */
 
-/* Fill w with a Hann window: w[i] = 0.5 - 0.5*cos(2*pi*i/4096). */
-void hann_window(double w[FFT_N]);
-
 /* Apply a Hann window to in[], transform, and write the magnitude of
  * bins 0..2047 to mag_db[] in dBFS (0 dB = full-scale sine centered on
  * a bin; silence floors at -240 dB). Sample rate is whatever the

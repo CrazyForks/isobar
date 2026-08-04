@@ -92,6 +92,12 @@ go quietly stale:
 - `docs/02-option-a-cross-platform.md` — the test count in the tree sketch.
 - `.github/workflows/build.yml` — its own header comment states the test
   count. It has been wrong before.
+- `.github/workflows/release.yml` — the test-gate step *name* states the
+  test count too, and the build.yml check does not cover it. It was
+  missed once.
+- Long comments in code that narrate history (`CMakeLists.txt`,
+  `core/syncscan.h`, `gui/main.cpp`'s header block) — check they still
+  describe the present, not the release they were written for.
 - `DEVIATIONS.md` — only if the change is a deliberate difference from the
   original program. New format support is not a deviation.
 

@@ -10,7 +10,7 @@
 > to FLTK (the architecture tree was updated to match the implemented layout).
 
 Goal: a window-for-window, bug-for-bug replica of KG-FAX v1.1.3 running natively
-on **macOS, Linux, and *BSD** from one C++ codebase.
+on **macOS, Linux, and Windows** from one C++ codebase.
 
 ## Why this option
 
@@ -46,7 +46,7 @@ isobar/
 │   │                        #   key names (see docs/01 sec. 6)
 │   └── fft.{h,cpp}          # 4096-pt radix-2 FFT for the scope
 ├── cli/
-│   └── kgfax-decode.cpp     # WAV in → .syn/PGM out (builds as isobar-decode)
+│   └── isobar-decode.cpp     # WAV in → .syn/PGM out (builds as isobar-decode)
 ├── gui/ (FLTK)              # TForm1 + Form2–Form10 replicas (see docs/05)
 │   ├── main.cpp             # TForm1: buttons, speed buttons, combos, preview
 │   ├── faxview / scopeview  # Image1 preview + Image3 spectrum/waterfall

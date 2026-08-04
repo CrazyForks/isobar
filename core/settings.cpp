@@ -1,5 +1,5 @@
 /* settings.cpp - see settings.h. Tiny fixed-schema ini reader/writer;
- * not a general ini library (the schema is 14 keys in 6 sections). */
+ * not a general ini library (the schema is 13 keys in 6 sections). */
 
 #include "settings.h"
 

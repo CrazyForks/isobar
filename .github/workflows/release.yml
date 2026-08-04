@@ -95,6 +95,18 @@ jobs:
             libfltk1.3-dev libjpeg-dev libpng-dev zlib1g-dev \
             librtaudio-dev
 
+      # Same vcpkg binary cache as build.yml - without it every release
+      # spends ~13 minutes compiling FLTK/RtAudio from source on the
+      # Windows runner. See build.yml for the full rationale.
+      - name: Cache vcpkg binary packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v6
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-x64-windows-static-md-fltk-rtaudio-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-x64-windows-static-md-fltk-rtaudio-
+
       - name: Export vcpkg dependencies (Windows)
         if: runner.os == 'Windows'
         # x64-windows-static-md = static FLTK/RtAudio (no DLLs to ship),
@@ -116,7 +128,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test (gate the release on the 12 headless tests)
+      - name: Test (gate the release on the 14 headless tests)
         working-directory: build
         run: ctest -C Release --output-on-failure
 

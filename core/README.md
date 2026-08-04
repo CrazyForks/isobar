@@ -114,8 +114,9 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   KG-FAX). Used by the CLI, the GUI Save, and auto-save.
 - `bmpfile.*` — BMP writer for the Form6 image-export path (and the
   auto-save `.bmp` format option); matches the original's BMP layout.
-- `palette.*` — the 4 palette modes (monotone / color-temp / blue-ray /
-  rainbow) + invert, applied at render time (Form5 color processing).
+- `palette.*` — the 4 palette modes (monotone / an unnamed blue→red
+  ramp, not selectable in the UI / "blue ray" / "color temp") + invert,
+  applied at render time (Form5 color processing).
 - `live.*` — streaming line assembly: same algorithms as `syncscan.*`
   restructured for incremental feeds (edge decisions lag by up to
   max_pulse; "no edge" is decidable only past expected+search_win+
@@ -148,13 +149,10 @@ gui/main.cpp `live_sample`).
 
 ## Known simplifications / future work
 
-- The fallback edge validation (dark + dip depth ≥ `FallbackDepth` below
-  the window mean) is deliberately NOT the original's. The original
-  slides a boxcar over the binarised video and accepts the minimum *mean*
-  if that mean is below `SyncThre` — an absolute bound, not a dip depth.
-  Its whole sync detector is now traced in spec 3.2(7)(8); porting the
-  fallback tracker is a well-specified future job, and `DEVIATIONS.md`
-  #16 records why we did not simply adopt its thresholds.
+- The fallback edge validation has two tiers (see the `syncscan.*` entry
+  above): the ported original first (`fallback_edge()`, since v1.3.0),
+  then our older dip-depth search as the second chance. `DEVIATIONS.md`
+  #16 records why the original's thresholds were not adopted wholesale.
 - Decimation 22050→8000 uses linear interpolation; adequate because the
   video LPF (1200 Hz) is far below the 4 kHz output Nyquist.
 - 60 rpm mode has no real-world recording test yet (only the synthetic

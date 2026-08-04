@@ -35,7 +35,6 @@ struct ToneDetect {
     static const double LEVEL_TH;          /* "tone present" threshold */
 
     ToneDetect();
-    void reset();
 
     /* Feed one 8000 S/s video byte. Every 800 samples (100 ms) returns
      * true and sets level300/level450 to that block's levels. */
