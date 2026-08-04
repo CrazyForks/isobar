@@ -407,6 +407,33 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.5.1 — audit fixes + the FallbackDepth correction (S30–S31):**
+  a full-project audit (five read-only passes over docs, core, gui, cli/tests,
+  repo hygiene) found the DSP sound but three genuine GUI bugs, all fixed:
+  the auto-save dialog's size radios were never initialised from the saved
+  setting (reopening it silently reset the image size to 760x500); the
+  recording-notice and progress popups centered on screen corner (0,0)
+  instead of the main window; and live audio was never paused for a WAV
+  decode, so the RtAudio thread and the decode worker raced on the shared
+  tone-level/scope globals (now guarded by an atomic flag). The audit's
+  robustness leftovers landed too: RtAudio calls wrapped so broken audio
+  can no longer kill the app, the Auto ctl button pops back up when audio
+  fails to start, and LiveScan's counters are atomic. The one user-visible
+  behaviour change: the Details dialog's "Sync detect" setting
+  (`FallbackDepth` ini key) now drives `fb_mean` — the original's SyncThre
+  quantity — instead of our dip-depth second chance, so the original's
+  default **30** is right again and is the new default (DEVIATIONS #16
+  follow-up; `fb_thresh` stays hard-coded at 10). **An `isobar.ini` written
+  by v1.2.0–v1.5.0 carries `FallbackDepth=10`, which this build reads as a
+  stricter `fb_mean=10` — set Sync detect back to 30 ("Normal") in the
+  Details dialog once.** Also fixed: both scrollbars permanently visible
+  around the image view (Fl_Scroll children are window-absolute; the
+  FaxView now sits at the scroll's inner-box origin). ~30 stale
+  comments/docs swept, dead code removed, and `kgfax-decode` renamed
+  `isobar-decode` — the last `kgfax-` filename. A splice-fill repair for
+  dropout tears was prototyped and deliberately dropped: it could
+  phantom-repair an intact line, and a false repair is worse than a tear.
+  Test count unchanged at 14; no new fixtures.
   **Released v1.5.0 — read the WAVs `afconvert` writes, and test the
   satellite path at last (S29):** two gaps left open by v1.4.0, plus one
   worry that turned out not to be a gap at all.
