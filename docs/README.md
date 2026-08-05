@@ -62,9 +62,10 @@ there are five committed test fixtures, each covering something the others
 cannot. `jmh-sample-short.wav` is a 30 s excerpt (44.1 kHz stereo Int16) of a
 strong signal — the full 9.6 min recording exists locally but is gitignored at
 97 MB, and tests auto-detect whichever is present. `jmh-offair-12k.wav` is 60 s
-of a real off-air reception at 12 kHz (added v1.2.0): it is the only fixture
-that is not 22050/44100 Hz, hence one of two exercising the resampler, and the
-only one weak enough to drive the fallback sync correction — both float-heavy
+of a real off-air reception at 12 kHz (added v1.2.0): the first fixture
+that is not 22050/44100 Hz — four of the five now exercise the resampler in
+the WAV reader — and the only one weak enough to drive the fallback sync
+correction — both float-heavy
 paths that CI checks on x86_64 and aarch64 alike. `jmh-phasing-16k.wav` is 90 s
 at 16 kHz of two back-to-back HIMAWARI IR charts (added v1.3.0): the only
 fixture containing a full transmission preamble — ~33 s of all-dark phasing

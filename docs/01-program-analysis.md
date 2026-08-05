@@ -119,8 +119,7 @@ Runs once per 2205-sample (100 ms) block:
    into `byte_4E89B8`. One 120-rpm line = 5 blocks = **4000 samples = 0.5 s**.
    `dword_4F25C4` (1 or 2, from rpm combo) makes 60-rpm lines 4000 samples @
    4000 samples/s (10 blocks × 400).
-7. **Sync pulse detection** (traced 2026-08-01, `sub_402904` ≈ lines 6591–6660
-   of the decompile). Per completed line:
+7. **Sync pulse detection** (traced 2026-08-01, `sub_402904`). Per completed line:
    - Copy the 4000-sample line into `byte_4EB898`, plus its **first 500
      samples again** into the adjacent `byte_4EC838` — a 4500-byte circular
      view of one line.

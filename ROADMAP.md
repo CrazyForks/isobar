@@ -255,9 +255,10 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      fixture trimmed to a committed 30 s excerpt (`jmh-sample-short.wav`,
      5.3 MB, 100% lock) with tests made sample-agnostic (pass on excerpt
      AND full WAV). **S23 added a second fixture**, `jmh-offair-12k.wav`
-     (1.4 MB, 60 s of a 12 kHz off-air JMH reception): it is the only
-     sample that is not 22050/44100 Hz, so it is the only one exercising
-     `core/resample.cpp` in the WAV reader, and the only one weak enough
+     (1.4 MB, 60 s of a 12 kHz off-air JMH reception): the first
+     sample that is not 22050/44100 Hz (the slew and himawari fixtures
+     since joined it in exercising `core/resample.cpp` in the WAV
+     reader), and the only one weak enough
      to drive the fallback sync correction (96 locked / 24 corrected /
      1 relock). Both are float-heavy paths that CI now checks on x86_64
      and aarch64 alike (`offair-test`). **S25 added a third fixture**,

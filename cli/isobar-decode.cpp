@@ -2,7 +2,7 @@
  *
  * Usage: ./isobar-decode [--60] input.wav out.pgm
  *
- * Pipeline: WAV (16-bit PCM, 22050/44100 Hz) -> 22050 Hz mono
+ * Pipeline: WAV (16-bit PCM, any rate ≥ 6000 Hz) -> 22050 Hz mono
  *           -> FM demod (8000 S/s video bytes) -> sync scan -> 1500 px lines
  *           -> binary PGM (P5).
  * --60 selects 60 rpm mode: the video stream is halved to 4000 S/s

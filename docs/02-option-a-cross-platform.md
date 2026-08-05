@@ -40,7 +40,8 @@ isobar/
 │   ├── palette.{h,cpp}      # gray / 2 gradients / rainbow / negative
 │   ├── bmpfile.{h,cpp}      # BMP export (Form6 path)
 │   ├── synfile.{h,cpp}      # .syn read/write ("SynFax2" + legacy "Syn Fax")
-│   ├── wavfile.{h,cpp}      # WAV reader (44.1k/22.05k → mono, decimation)
+│   ├── wavfile.{h,cpp}      # WAV reader (any rate ≥ 6000 Hz → 22050,
+│   │                        #   PCM incl. WAVE_FORMAT_EXTENSIBLE)
 │   ├── resample.{h,cpp}     # streaming rate conversion for live audio
 │   ├── settings.{h,cpp}     # isobar.ini — original's structure, clearer
 │   │                        #   key names (see docs/01 sec. 6)
@@ -70,7 +71,7 @@ original's `TThread::Synchronize`-onto-GUI-thread defect.
    2205→800 decimation → sync detect (3980–4020 window, width 100–400) →
    fallback tracker with LReSycn/RReSycn hysteresis → line rotate.
 3. CLI tool: WAV (16-bit, any channel count, any rate ≥ 6000 Hz —
-   resampled to 22050 internally) → `.syn` + PNG.
+   resampled to 22050 internally) → `.syn` or PGM.
 4. **Validation harness**: collect test signals —
    - record JMH (3.6206 / 7.7931 / 13.9866 MHz USB) off-air, and/or
    - run original KG-FAX under Wine/CrossOver on the same WAV to produce
