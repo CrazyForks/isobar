@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(isobar
-    VERSION 1.5.1
+    VERSION 1.5.2
     LANGUAGES CXX)
 
 # Expose the version to the source as ISOBAR_VERSION (used in the Details
@@ -279,7 +279,6 @@ endif()
 if(APPLE)
     # Bundle identity + version (also used inside Info.plist).
     set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.sakuragawasara.isobar")
-    set(MACOSX_BUNDLE_EXECUTABLE_NAME "isobar-gui")
     set(ISOBAR_VERSION "${PROJECT_VERSION}")
     configure_file(
         ${CMAKE_SOURCE_DIR}/macos/Info.plist.in
@@ -316,7 +315,7 @@ if(NOT APPLE)
 endif()
 
 # --- Tests & utilities -------------------------------------------------------
-# The 14 below run headless and need only the source tree (some read
+# The 18 below run headless and need only the source tree (some read
 # "jmh sample.wav" via a relative path, so they run from the source root).
 # playwav and audio-restart-test need real audio hardware → not in ctest.
 
@@ -346,6 +345,13 @@ add_isobar_test(phasing-test)
 add_isobar_test(slew-test)
 add_isobar_test(satellite-test)
 add_isobar_test(reacq-test)
+
+# Self-contained synthetic/core tests (no WAV needed; the helper's
+# source-root working directory costs nothing).
+add_isobar_test(synfile-test)
+add_isobar_test(palette-test)
+add_isobar_test(demod-test)
+add_isobar_test(phase-lock-test)
 
 # resample-test exercises the streaming resampler (core/resample.cpp).
 add_executable(resample-test cli/resample-test.cpp)

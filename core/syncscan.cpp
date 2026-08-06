@@ -163,8 +163,10 @@ long fallback_search(const std::vector<int> &sm, long lo, long hi,
  * two reference points a whole fallback_win apart, which its own jump
  * guard then rejects (docs/01 sec. 3.2(8) "pick one reference point").
  * We gate on the samples BEFORE the window and publish its start, so the
- * anchor is the bright->dark edge - the same one our shape check
- * publishes. Same mechanism, one consistent reference. */
+ * raw position is the bright->dark edge - the same raw reference our
+ * shape check starts from; sync_anchor() then refines both to the
+ * pulse's darkest-window centre, so the phase is published at one
+ * consistent reference. Same mechanism, one consistent reference. */
 long fallback_edge(const std::vector<int> &sm, long lo, long hi,
                    const SyncParams &p, long prev, bool ever_locked)
 {

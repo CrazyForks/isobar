@@ -675,10 +675,19 @@ static int g_last_led = -1;   /* last LED state posted (-1 = none) */
  * Written by the UI thread (start_decode / cb_decode_done), read by
  * the audio thread, so atomic like g_recording below. */
 static std::atomic<bool> g_file_decode{false};
+/* Set by cb_quit before the window goes away. Every Fl::awake handler
+ * checks it first and only frees its message: a decode-worker or audio
+ * callback already in flight must never touch widgets (or main's dead
+ * stack frame) on the way out (audit 2026-08-06 sec. 3.3). */
+static std::atomic<bool> g_quitting{false};
 
 static void cb_progress(void *p)
 {
     DecodeProg *msg = (DecodeProg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     char buf[96];
     snprintf(buf, sizeof buf, "decoding %.0f / %.0f s",
              msg->done, msg->total);
@@ -696,6 +705,10 @@ static void decode_progress(double done, double total)
 static void cb_scope(void *p)
 {
     ScopeMsg *msg = (ScopeMsg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     double db[FFT_BINS];
     fft_4096(msg->block, db);   /* ~microseconds, fine on the UI thread */
     msg->app->scope->set_spectrum(db);
@@ -716,6 +729,10 @@ static void scope_block(const double bpf[FFT_N])
 static void cb_led(void *p)
 {
     LedMsg *msg = (LedMsg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     set_leds(msg->app, msg->state);
     delete msg;
 }
@@ -742,6 +759,10 @@ static int g_tone_state = 0, g_streak3 = 0, g_streak4 = 0;
 static void cb_tone(void *p)
 {
     ToneMsg *msg = (ToneMsg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     AppState *app = msg->app;
     Fl_Color c = msg->state == 1 ? LED_OK
                : msg->state == 2 ? LED_WARN : LED_OFF;
@@ -780,6 +801,11 @@ static void tone_levels(double l300, double l450)
 static void cb_decode_done(void *p)
 {
     DecodeDone *msg = (DecodeDone *)p;
+    if (g_quitting) {
+        delete msg->img;
+        delete msg;
+        return;
+    }
     AppState *app = msg->app;
     app->decoding = false;
     g_file_decode = false;   /* audio thread resumes scope + tones */
@@ -902,6 +928,10 @@ struct LevelMsg {
 static void cb_level(void *p)
 {
     LevelMsg *msg = (LevelMsg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     if (!msg->app->recording && !msg->app->decoding) {
         char buf[64];
         snprintf(buf, sizeof buf, "listening: level %.0f", msg->rms);
@@ -923,6 +953,10 @@ static int  g_last_live_led = -1;  /* LED dedup while not recording   */
 static void cb_live_line(void *p)
 {
     LineMsg *msg = (LineMsg *)p;
+    if (g_quitting) {
+        delete msg;
+        return;
+    }
     AppState *app = msg->app;
     app->image.lines.push_back(
         std::vector<uint8_t>(msg->line, msg->line + FaxImage::WIDTH));
@@ -1359,6 +1393,7 @@ static void save_settings(AppState *app)
 static void cb_quit(Fl_Widget *, void *ud)
 {
     AppState *app = (AppState *)ud;
+    g_quitting = true;   /* in-flight Fl::awake messages now free-only */
     record_off(app);
     g_audio.close();   /* end audio callbacks before widgets/settings go */
     save_settings(app);

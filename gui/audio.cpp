@@ -90,7 +90,16 @@ LiveAudio::~LiveAudio()
 static Stream *open_stream(unsigned int device_id, std::string *err)
 {
     Stream *s = new Stream;
-    s->rt = new RtAudio();   /* default API — see audio_input_devices() */
+    /* The v6 ctor throws when no audio backend is usable; it must not
+     * escape into the FLTK callback that got us here (std::terminate).
+     * Same treatment audio_input_devices() already has. */
+    try {
+        s->rt = new RtAudio();   /* default API — see audio_input_devices() */
+    } catch (const std::exception &e) {
+        if (err) *err = e.what();
+        delete s;
+        return nullptr;
+    }
 
     RtAudio::StreamParameters prm;
     prm.deviceId = device_id;

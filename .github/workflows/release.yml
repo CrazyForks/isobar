@@ -128,7 +128,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test (gate the release on the 14 headless tests)
+      - name: Test (gate the release on the 18 headless tests)
         working-directory: build
         run: ctest -C Release --output-on-failure
 
@@ -182,11 +182,15 @@ jobs:
           chmod +x linuxdeploy-${{ matrix.arch }}.AppImage linuxdeploy-plugin-appimage-${{ matrix.arch }}.AppImage
 
           # Lay out the AppDir (FHS-style: usr/bin, usr/share/...).
-          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/512x512/apps
           install -m755 build/isobar-gui    AppDir/usr/bin/isobar-gui
           install -m755 build/isobar-decode AppDir/usr/bin/isobar-decode
           install -m644 assets/isobar.desktop        AppDir/usr/share/applications/
-          install -m644 assets/isobar-512.png        AppDir/usr/share/icons/hicolor/256x256/apps/isobar.png
+          install -m644 assets/isobar-512.png        AppDir/usr/share/icons/hicolor/512x512/apps/isobar.png
+          # the runtime window-icon lookup wants isobar-128.png next to the
+          # exe (main.cpp exe_dir()) — the CPack rule that ships it never
+          # runs for AppImages, so place it by hand
+          install -m644 assets/isobar-128.png        AppDir/usr/bin/
 
           # linuxdeploy deploys all .so deps + writes AppRun + emits the AppImage.
           export OUTPUT="$ARTIFACT"
@@ -194,7 +198,7 @@ jobs:
             --appdir AppDir \
             --executable AppDir/usr/bin/isobar-gui \
             --desktop-file AppDir/usr/share/applications/isobar.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/isobar.png \
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/isobar.png \
             --output appimage
           mv "$ARTIFACT" build/
 

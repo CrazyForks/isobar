@@ -57,7 +57,8 @@ To build from source instead, see [Build](#build).
 - **Image tools**: zoom/pan, vertical rotate toggle, XY flip, 4 color
   palettes, BMP export, print.
 - **KG-FAX interop**: round-trips `.syn` files (including the radix-255
-  line-count encoding and palette mode/invert bits in the header).
+  line-count encoding and palette mode/invert bits in the header), and
+  reads the older legacy "Syn Fax" variant (fixed 2000×2280 body).
 - **Survives audio dropouts**, which matters if you feed it a networked
   SDR (KiwiSDR and friends) over a long internet path — see below.
 
@@ -93,7 +94,7 @@ DSP core is dependency-free.
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 14 headless tests
+ctest --test-dir build        # runs the 18 headless tests
 ```
 
 Install the dependencies first:
@@ -141,7 +142,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.5.1 released** — working software. All core receive features are
+**v1.5.2 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = validation & release, largely
 done — two validation items still open).
