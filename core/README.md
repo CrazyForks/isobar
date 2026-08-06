@@ -111,7 +111,10 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
 - `synfile.*` — `.syn` read/write (SynFax2 + legacy "Syn Fax" magic),
   byte-exact round-trip incl. the radix-255 line-count encoding fixed to
   match the original 2026-07-31 (interop confirmed against the real
-  KG-FAX). Used by the CLI, the GUI Save, and auto-save.
+  KG-FAX); the legacy variant's fixed 2000x2280 body is decimated
+  4:3 on load and its mode byte coerced 1→3, like the original (fixed
+  2026-08-06, from the Ghidra re-verification). Used by the CLI, the GUI
+  Save, and auto-save.
 - `bmpfile.*` — BMP writer for the Form6 image-export path (and the
   auto-save `.bmp` format option); matches the original's BMP layout.
 - `palette.*` — the 4 palette modes (monotone / an unnamed blue→red

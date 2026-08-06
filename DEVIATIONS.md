@@ -25,6 +25,13 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     candidate edges and chain-matches them across lines, validates the
     fallback on dip depth below the local mean, and has no trailing-bright
     test.
+    **The period/pulse windows are inclusive where the original's are
+    strict** (noted 2026-08-06, on the Ghidra re-verification): the
+    original rejects a period ≤3980 or ≥4020 and a pulse ≤100 or ≥400;
+    ours accepts 3980..4020 and 100..400 inclusive. One sample at each
+    boundary, and our edge metric (the moving average) is not the
+    original's binarised video anyway, so the exact endpoints do not
+    transfer 1:1.
     **Two S23 claims here were wrong and are withdrawn**: that the
     original's video is inverted relative to ours (it is not — both put
     1500 Hz at 0 and 2300 Hz at ≈251), and that its shape check is a
@@ -57,8 +64,10 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     boxcar and so anchors the dark→bright edge, while its own shape check
     anchors the bright pulse, two reference points a whole `syn` window
     apart that its jump guard then rejects. We gate on the samples *before*
-    the window, anchoring the bright→dark edge, which is the reference our
-    shape check already publishes: same mechanism, one consistent reference
+    the window, so the raw position is the bright→dark edge — the same raw
+    reference our shape check starts from; both are then refined by
+    `sync_anchor()` (the anchor paragraph below), so the phase is published
+    at one consistent reference: same mechanism, one consistent reference
     (docs/01 §3.2(8)).
     The ini's `FallbackDepth` drove the dip-depth second chance until
     2026-08-04; it now drives `fb_mean`, the original's own meaning, at

@@ -408,6 +408,30 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.5.2 — the independent-audit fix list (S33):** an outside
+  audit (four read-only lanes + a from-scratch Ghidra re-verification of
+  the original binary — the IDA-derived spec survived it on essentially
+  every load-bearing fact) ended in a prioritized fix list, all of which
+  landed. The one real interop bug: legacy "Syn Fax" `.syn` files were
+  accepted but misparsed as SynFax2 — the loader now reads their actual
+  layout (no count field; fixed 2000 bytes/line × 2280 lines, decimated
+  4:3 input-driven) and coerces palette mode 1→3 on load like the
+  original. Two medium GUI bugs fixed: quitting during a WAV decode
+  could hand a worker-thread callback dead widgets (a `g_quitting`
+  atomic now gates every `Fl::awake` handler), and an RtAudio
+  constructor throw on a machine with no usable audio backend escaped an
+  FLTK callback as `std::terminate` (now caught, reported as a normal
+  error). Four cheap tests the audit asked for bring ctest 14 → **18**:
+  `.syn` round-trip at the radix-255 boundaries + legacy layout, palette
+  anchor/invert-first pinning, a synthetic 1500/2300 Hz demod check, and
+  the previously uncovered nonzero-phase lock/re-lock path. Packaging:
+  the AppImage now ships the 128 px runtime window icon (Linux showed
+  the default X11 icon) and puts the 512 px icon in the right hicolor
+  size directory. `docs/01` absorbed the audit's seven spec corrections
+  (`.syn` width is not stored; strict sync comparands 3981–4019 /
+  101–399; the demod reference is exactly 0.42744, not 2π·1500/22050;
+  the Hann window covers only ~1102 samples; …). No decoder behaviour
+  changed — hence a patch bump.
   **Released v1.5.1 — audit fixes + the FallbackDepth correction (S30–S31):**
   a full-project audit (five read-only passes over docs, core, gui, cli/tests,
   repo hygiene) found the DSP sound but three genuine GUI bugs, all fixed:

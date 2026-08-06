@@ -3,11 +3,15 @@
  * Format (docs/01-program-analysis.md section 7):
  *   offset  size  content
  *   0       7     "SynFax2"  (legacy read: "Syn Fax")
- *   7       1     mode byte (rpm/color mode)
+ *   7       1     mode byte (rpm/color mode; coerced 1 -> 3 on load)
  *   8       1     negative flag
  *   9       2     line count: byte0 = n/255, byte1 = n%255 (radix-255,
  *                 high byte first — NOT standard little/big-endian)
  *   11      N*1500  raw image lines, 1 byte/px brightness
+ *
+ * Width is not stored; it is fixed 1500 px. The legacy "Syn Fax" variant
+ * has no line-count field either: its body is always 2280 lines x
+ * 2000 bytes, decimated to 1500 px/line on load (out[(i*3)>>2] = in[i]).
  *
  * Written for interoperability only; this is a fresh implementation of a
  * documented file layout, not derived from the original program's code.
@@ -20,7 +24,7 @@
 #include <string>
 
 struct SynHeader {
-    uint8_t mode;       /* rpm/color mode byte, passed through as-is */
+    uint8_t mode;       /* rpm/color mode byte (mode 1 coerced to 3 on load) */
     uint8_t negative;   /* nonzero = negative image flag */
     int     line_count;
 };

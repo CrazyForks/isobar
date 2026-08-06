@@ -65,9 +65,11 @@ struct SyncParams {
     int max_period;   /* 4020 */
     int min_pulse;    /*  100 samples: shortest sync pulse (12.5 ms) */
     int max_pulse;    /*  400 samples: longest sync pulse (50 ms)    */
-    int search_win;   /*   20 samples: +- window for shape-edge match;
-                        an edge further than this from the predicted
-                        position is rejected (SyncWidth)              */
+    int search_win;   /*   20 samples: +- window the shape check judges
+                        the ANCHOR within; raw edges are bracketed more
+                        generously (an anchor sits within win/2 of its
+                        own edge), then the anchor itself is tested
+                        (SyncWidth)                                   */
     int max_coast;    /*   10 lines: give up lock after this many
                         consecutive invalid lines (LReSycn)           */
     int dark_th;      /*   96: brightness below this = "dark"         */
