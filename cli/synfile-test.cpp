@@ -94,6 +94,7 @@ int main()
             return fail("round-trip header fields");
         if (check_image(img, n))
             return 1;
+        f.close();          /* Windows refuses to delete an open file */
         fs::remove(path);
     }
 
