@@ -13,6 +13,7 @@
 #include "../core/synfile.h"
 
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>

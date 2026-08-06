@@ -13,6 +13,9 @@
 #include <cstdio>
 #include <vector>
 
+/* Local PI — see core/tonedetect.cpp (M_PI is missing under MSVC). */
+static const double PI = 3.14159265358979323846;
+
 static int fail(const char *what)
 {
     printf("FAIL: %s\n", what);
@@ -37,14 +40,14 @@ int main()
 
     /* 1500 Hz tone -> black (~0) */
     for (int i = 0; i < n; i++)
-        samples[i] = 12000.0 * sin(2.0 * M_PI * 1500.0 * i / fs);
+        samples[i] = 12000.0 * sin(2.0 * PI * 1500.0 * i / fs);
     double black = settled_mean(fm_decode(samples, nullptr));
     if (black > 10.0)
         return fail("1500 Hz tone does not decode to black");
 
     /* 2300 Hz tone -> white (~251) */
     for (int i = 0; i < n; i++)
-        samples[i] = 12000.0 * sin(2.0 * M_PI * 2300.0 * i / fs);
+        samples[i] = 12000.0 * sin(2.0 * PI * 2300.0 * i / fs);
     double white = settled_mean(fm_decode(samples, nullptr));
     if (white < 240.0 || white > 255.0)
         return fail("2300 Hz tone does not decode to white");
