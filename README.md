@@ -142,10 +142,13 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.5.2 released** — working software. All core receive features are
+**v1.6.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = validation & release, largely
 done — two validation items still open).
+Reception is not limited to the original's 2280-line buffer: long charts
+(e.g. XSG's ~2755-line broadcasts) are captured in full up to 4560 lines,
+while `.syn` saves stay KG-FAX-compatible (2280 lines max).
 Continuous builds run on macOS, Linux, and Windows — Intel and ARM alike —
 via GitHub Actions (`.github/workflows/`); tags `v*.*.*` produce five
 self-contained native release packages (two macOS `.dmg`s, a Windows `.zip`,

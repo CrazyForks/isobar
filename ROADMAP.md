@@ -152,6 +152,18 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   save/print/auto-save renders) added; the Form2 bar is near-instant
   on modern hardware (it flashes). Dev flags `--test-notice`,
   `--test-progress`, `--test-autosave [file] [fmt] [size]`
+- ✅ **Receive buffer extends past 2280 lines** (2026-08-07, DEVIATIONS
+  #17): XSG (Guangzhou) charts decode to ~2755 lines, over the
+  original's fixed 1500×2280 buffer. The port now receives up to 4560
+  lines (2×) before the drop-oldest clamp applies — but only when
+  auto-save is off or armed on `.bmp`; with auto-save on `.syn` the
+  original 2280 behavior (CycleGet / drop-oldest) is kept, and every
+  `.syn` output stays 2280-capped for KG-FAX compatibility (manual
+  "Save data" on a longer image offers to truncate). Live preview,
+  zoom-0 render and zoom-1/2 pan ranges widen with the line count.
+  XSG off-air decodes (FYCI 2755 lines, ASPN 2753, lock 86-91%)
+  confirmed the core pipeline handles the length; GUI live path to be
+  verified on the next XSG schedule.
 
 ## M6 — Validation & release 🔶
 - 🔶 Golden-reference comparison against the original — **kept open**.
@@ -408,6 +420,17 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.6.0 — the extendable receive buffer (S35):** the user
+  recorded XSG (Guangzhou), whose charts run ~2755 lines — past the
+  original's fixed 1500×2280 buffer, which Isobar clamped by dropping
+  the oldest line. The buffer now grows to a new hard cap of 4560 lines
+  (2×; DEVIATIONS #17) whenever auto-save is off or armed on `.bmp`;
+  with auto-save on `.syn` the original 2280 behaviour is kept
+  (CycleGet save+clear, else drop-oldest), so every `.syn` output stays
+  KG-FAX-compatible — a manual "Save data" on a longer image asks, then
+  saves just the first 2280 lines. Live preview, zoom-0 render and
+  zoom-1/2 pan ranges widen with the line count. Loopback-verified by
+  the user on the XSG recordings. New feature — hence a minor bump.
   **Released v1.5.2 — the independent-audit fix list (S33):** an outside
   audit (four read-only lanes + a from-scratch Ghidra re-verification of
   the original binary — the IDA-derived spec survived it on essentially

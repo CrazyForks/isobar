@@ -33,6 +33,11 @@
 struct FaxImage {
     static const int WIDTH = 1500;     /* pixels per line                   */
     static const int MAX_LINES = 2280; /* 19 min @ 120 rpm (docs/01 sec. 4) */
+    /* Receive-buffer-only cap (DEVIATIONS #17): the GUI lets the image
+     * grow past MAX_LINES (e.g. XSG charts ~2755 lines) up to this limit,
+     * dropping the oldest line beyond it. .syn I/O stays capped at
+     * MAX_LINES for KG-FAX compatibility. */
+    static const int HARD_MAX_LINES = 4560;
     std::vector<std::vector<uint8_t>> lines;  /* each WIDTH px, 0=black */
 
     /* Stats. Initialised here, not just by scan_lines: the GUI builds

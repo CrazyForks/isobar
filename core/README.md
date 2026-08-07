@@ -29,7 +29,10 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
 - `syncscan.*` — line extraction (120/60 rpm): lines are emitted on a
   fixed 4000-sample grid from stream start (preamble included, like the
   original), rotated by the tracked phase offset (sync edge → index 0);
-  the grid never moves, tracking only adjusts the phase. Sync pulses =
+  the grid never moves, tracking only adjusts the phase. `FaxImage`
+  carries two line-count caps: `MAX_LINES` = 2280 (the `.syn` / KG-FAX
+  limit) and `HARD_MAX_LINES` = 4560 (the GUI receive-buffer cap for
+  long charts, DEVIATIONS #17). Sync pulses =
   dark runs with width 100–400 samples, period 3980–4020 vs. the
   previous line's edge. When the shape check fails, two fallbacks in
   order: first `fallback_edge()`, the original's own tracker ported
