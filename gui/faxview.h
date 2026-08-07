@@ -100,10 +100,13 @@ private:
     int       v64_, v68_, v6C_, v70_;
     int       down_x_, down_y_;
 
-    /* live mode: RGB columns, 500 px tall, up to 760 columns
-     * (2280 lines / 3, the original's preview width) */
+    /* live mode: RGB columns, 500 px tall. The buffer starts at 760
+     * columns (2280 lines / 3, the original's preview width) and GROWS
+     * by 760-column chunks when reception runs past 2280 lines
+     * (DEVIATIONS #17) - live_cap_cols_ tracks the current stride. */
     bool      live_;
     int       live_cols_;     /* plotted columns                 */
+    int       live_cap_cols_; /* live_rgb_ capacity, in columns  */
     int       live_lines_;    /* lines fed so far (HUD "Line# n") */
     int       live_acc_[500]; /* tap sums for the current 3 lines */
     std::vector<uint8_t> live_rgb_;   /* 500*3 bytes per column */

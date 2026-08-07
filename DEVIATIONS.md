@@ -245,3 +245,22 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     the original's save semantics exactly: `.syn` clears the buffer
     afterward, `.bmp` does not (the asymmetry is in the trace, preserved
     faithfully).
+
+17. **The receive buffer grows past the original's 2280-line clamp, up
+    to 4560 lines.** The original's image buffer is a fixed 1500×2280
+    (19 min @ 120 rpm); a fuller buffer is clamped by dropping the
+    oldest line (`dword_4F25BC > 2279`, docs/01 §4). Real charts can run
+    longer — XSG (Guangzhou) broadcasts decode to ~2755 lines — so the
+    port keeps receiving up to `FaxImage::HARD_MAX_LINES` = 4560 (2×)
+    before the same drop-oldest clamp applies. The extension is active
+    only when auto-save is off or armed on the `.bmp` filter; with
+    auto-save on `.syn` the original 2280 behavior is kept (CycleGet
+    saves+clears, otherwise drop-oldest), so an armed `.syn` auto-save
+    can never hit an oversized buffer. Every `.syn` output stays
+    KG-FAX-compatible: `.syn` writing still refuses >2280 lines, and the
+    manual "Save data" on a longer image offers to save just the first
+    2280. Display-side, the live preview and the zoom-0 render widen
+    past 760 columns (the parent scroll view handles overflow), the
+    zoom-1/2 pan ranges grow with the line count, and printing an
+    extended image fills the whole page (the 2280-line ruler only
+    shrinks partial receptions).

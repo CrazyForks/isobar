@@ -22,12 +22,29 @@ static int clampi(int v, int lo, int hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+/* Horizontal viewport maxima for the line axis. The original's
+ * constants (379 at zoom 1, 1519 at zoom 2, 506 for v64) are sized for
+ * its fixed 2280-line buffer; for longer images (DEVIATIONS #17) they
+ * grow with the line count so the tail stays reachable. Zoom 1 shows
+ * 2 lines per column, zoom 2 one line per column, 760 columns wide. */
+static int max_off5C(int nlines, int zoom)
+{
+    int orig = zoom == 1 ? 379 : 1519;
+    int m = zoom == 1 ? nlines / 2 - 761 : nlines - 761;
+    return m > orig ? m : orig;
+}
+
+static int max_v64(int nlines)
+{
+    return (max_off5C(nlines, 1) + 380) * 2 / 3;   /* = 506 at 2280 */
+}
+
 FaxView::FaxView(int x, int y, int w, int h)
     : Fl_Widget(x, y, w, h), img_(0), disp_w_(w), empty_h_(h),
       zoom_(0), off5C_(0), off60_(0),
       v64_(253), v68_(166), v6C_(0), v70_(0),
       down_x_(0), down_y_(0),
-      live_(false), live_cols_(0),
+      live_(false), live_cols_(0), live_cap_cols_(LIVE_MAX_COLS),
       live_click_cb_(0), live_click_ud_(0)
 {
     for (int i = 0; i < 256; i++)
@@ -79,12 +96,14 @@ void FaxView::zoom_in(int cx, int cy)
         return;
     }
     if (zoom_ == 1) {
-        v64_ = clampi(cx, 253, 506);
+        int nl = (int)src_.lines.size();
+        v64_ = clampi(cx, 253, max_v64(nl));
         v68_ = clampi(cy, 166, 333);
-        off5C_ = clampi((int)(cx * 1.5) - 380, 0, 379);
+        off5C_ = clampi((int)(cx * 1.5) - 380, 0, max_off5C(nl, 1));
         off60_ = clampi((int)(cy * 1.5) - 250, 0, 249);
     } else {   /* zoom_ == 2 */
-        off5C_ = clampi(3 * v64_ + 2 * cx - 1140, 0, 1519);
+        off5C_ = clampi(3 * v64_ + 2 * cx - 1140, 0,
+                        max_off5C((int)src_.lines.size(), 2));
         off60_ = clampi(3 * v68_ + 2 * cy - 750, 0, 999);
         v6C_ = off5C_;
         v70_ = off60_;
@@ -99,7 +118,8 @@ void FaxView::zoom_out()
     if (zoom_ == 0)
         return;
     if (--zoom_ == 1) {
-        off5C_ = clampi((int)(v64_ * 1.5) - 380, 0, 379);
+        int nl = (int)src_.lines.size();
+        off5C_ = clampi((int)(v64_ * 1.5) - 380, 0, max_off5C(nl, 1));
         off60_ = clampi((int)(v68_ * 1.5) - 250, 0, 249);
     }
     render();
@@ -110,13 +130,14 @@ void FaxView::zoom_out()
  * rotate window, which our rotate does not port). */
 void FaxView::pan(int dx, int dy)
 {
+    int nl = (int)src_.lines.size();
     if (zoom_ == 1) {
-        v64_ = clampi(v64_ + (int)(dx * 0.6666666), 253, 506);
+        v64_ = clampi(v64_ + (int)(dx * 0.6666666), 253, max_v64(nl));
         v68_ = clampi(v68_ + (int)(dy * 0.6666666), 166, 333);
-        off5C_ = clampi((int)(v64_ * 1.5) - 380, 0, 379);
+        off5C_ = clampi((int)(v64_ * 1.5) - 380, 0, max_off5C(nl, 1));
         off60_ = clampi((int)(v68_ * 1.5) - 250, 0, 249);
     } else if (zoom_ == 2) {
-        v6C_ = clampi(v6C_ + dx, 0, 1519);
+        v6C_ = clampi(v6C_ + dx, 0, max_off5C(nl, 2));
         v70_ = clampi(v70_ + dy, 0, 999);
         v64_ = (v6C_ + 300) / 3;
         v68_ = (v70_ + 250) / 3;
@@ -193,9 +214,13 @@ void FaxView::render()
      * screen x = line axis, y = pixel axis,
      * line start at the bottom; only the sampling changes. Columns
      * past the last line stay black, like the original's zeroed
-     * buffer. Fixed 760x500 bitmap. */
-    std::vector<uint8_t> rgb((size_t)LIVE_MAX_COLS * LIVE_H * 3, 0);
-    for (int sx = 0; sx < LIVE_MAX_COLS; sx++) {
+     * buffer. The bitmap is 760 columns wide (the original's fixed
+     * size) or wider when the image runs past 2280 lines - the parent
+     * Fl_Scroll takes care of the overflow (DEVIATIONS #17). */
+    const int cols = (nlines + 2) / 3 > LIVE_MAX_COLS ? (nlines + 2) / 3
+                                                      : LIVE_MAX_COLS;
+    std::vector<uint8_t> rgb((size_t)cols * LIVE_H * 3, 0);
+    for (int sx = 0; sx < cols; sx++) {
         if (zoom_ == 0) {
             /* 1/3: screen col sx averages lines 3sx..3sx+2, screen row
              * sy averages pixels 3*(499-sy)..+2 (the .syn-load redraw
@@ -215,7 +240,7 @@ void FaxView::render()
                 }
                 uint8_t v = (uint8_t)(sum / (3 * nl));
                 const uint8_t *c = pal_[v];
-                uint8_t *px = &rgb[((size_t)sy * LIVE_MAX_COLS + sx) * 3];
+                uint8_t *px = &rgb[((size_t)sy * cols + sx) * 3];
                 px[0] = c[0];
                 px[1] = c[1];
                 px[2] = c[2];
@@ -232,7 +257,7 @@ void FaxView::render()
                 int b = (gray(l0 + 1, p0) + gray(l0 + 1, p0 + 1)) / 2;
                 uint8_t v = (uint8_t)((a + b) / 2);
                 const uint8_t *c = pal_[v];
-                uint8_t *px = &rgb[((size_t)sy * LIVE_MAX_COLS + sx) * 3];
+                uint8_t *px = &rgb[((size_t)sy * cols + sx) * 3];
                 px[0] = c[0];
                 px[1] = c[1];
                 px[2] = c[2];
@@ -246,7 +271,7 @@ void FaxView::render()
             for (int sy = 0; sy < LIVE_H; sy++) {
                 uint8_t v = (uint8_t)gray(l, 1499 - off60_ - sy);
                 const uint8_t *c = pal_[v];
-                uint8_t *px = &rgb[((size_t)sy * LIVE_MAX_COLS + sx) * 3];
+                uint8_t *px = &rgb[((size_t)sy * cols + sx) * 3];
                 px[0] = c[0];
                 px[1] = c[1];
                 px[2] = c[2];
@@ -256,10 +281,10 @@ void FaxView::render()
 
     /* `tmp` only borrows rgb; copy() makes an owning image, so rgb can
      * die at end of scope */
-    Fl_RGB_Image tmp(rgb.data(), LIVE_MAX_COLS, LIVE_H, 3);
+    Fl_RGB_Image tmp(rgb.data(), cols, LIVE_H, 3);
     img_ = tmp.copy();
 
-    size(LIVE_MAX_COLS, LIVE_H);
+    size(cols, LIVE_H);
     redraw();
 }
 
@@ -267,18 +292,19 @@ void FaxView::live_begin()
 {
     live_ = true;
     live_cols_ = 0;
+    live_cap_cols_ = LIVE_MAX_COLS;
     live_lines_ = 0;
     memset(live_acc_, 0, sizeof live_acc_);
-    /* row-major, fixed stride: pixel (r,c) at (r*LIVE_MAX_COLS + c)*3,
+    /* row-major, fixed stride: pixel (r,c) at (r*live_cap_cols_ + c)*3,
      * so one Fl_RGB_Image can draw the whole frontier */
-    live_rgb_.assign((size_t)LIVE_H * LIVE_MAX_COLS * 3, 0);
+    live_rgb_.assign((size_t)LIVE_H * live_cap_cols_ * 3, 0);
     size(disp_w_, empty_h_);
     redraw();
 }
 
 void FaxView::live_column(const uint8_t *line1500)
 {
-    if (!live_ || live_cols_ >= LIVE_MAX_COLS)
+    if (!live_)
         return;
     /* accumulate the 3 px -> 1 tap values; every 3rd line plots one
      * column of the 3-line average (docs/01 sec. 4) */
@@ -289,12 +315,25 @@ void FaxView::live_column(const uint8_t *line1500)
     if (live_lines_ % 3 != 0)
         return;
 
+    /* past 2280 lines the buffer outgrows the original's fixed 760
+     * columns: widen by one 760-column chunk, row by row (#17) */
+    if (live_cols_ == live_cap_cols_) {
+        int newcap = live_cap_cols_ + LIVE_MAX_COLS;
+        std::vector<uint8_t> wider((size_t)LIVE_H * newcap * 3, 0);
+        for (int r = 0; r < LIVE_H; r++)
+            memcpy(&wider[(size_t)r * newcap * 3],
+                   &live_rgb_[(size_t)r * live_cap_cols_ * 3],
+                   (size_t)live_cap_cols_ * 3);
+        live_rgb_.swap(wider);
+        live_cap_cols_ = newcap;
+    }
+
     /* plot the column, FLIPPED: line start (sync edge) at the bottom,
      * like the original (docs/01 sec. 4, y = 499 - tap) */
     for (int y = 0; y < LIVE_H; y++) {
         uint8_t v = (uint8_t)(live_acc_[y] / 3);
         live_acc_[y] = 0;
-        uint8_t *px = &live_rgb_[((size_t)(LIVE_H - 1 - y) * LIVE_MAX_COLS +
+        uint8_t *px = &live_rgb_[((size_t)(LIVE_H - 1 - y) * live_cap_cols_ +
                                   live_cols_) * 3];
         const uint8_t *c = pal_[v];
         px[0] = c[0];
@@ -327,7 +366,7 @@ void FaxView::draw()
         fl_rectf(x(), y(), w(), h());
         if (live_cols_ > 0) {
             Fl_RGB_Image img(live_rgb_.data(), live_cols_, LIVE_H, 3,
-                             LIVE_MAX_COLS * 3);
+                             live_cap_cols_ * 3);
             img.draw(x(), y());
             /* progress cursor: cyan frontier line + top tick
              * (the original's reverse-L) and the HUD text */

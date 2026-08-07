@@ -297,6 +297,21 @@ static void cb_save_syn(Fl_Widget *, void *ud)
         fl_alert("no image to save");
         return;
     }
+    /* DEVIATIONS #17: past 2280 lines a .syn would be unreadable by the
+     * original KG-FAX, so offer to save just the first 2280. */
+    FaxImage truncated;   /* used only when the image is oversized */
+    const FaxImage *img = &app->image;
+    if ((int)app->image.lines.size() > FaxImage::MAX_LINES) {
+        if (!fl_choice("the image has %d lines; .syn holds at most %d "
+                       "(KG-FAX limit).\nSave the first %d lines?",
+                       "No", "Yes", 0,
+                       (int)app->image.lines.size(), FaxImage::MAX_LINES,
+                       FaxImage::MAX_LINES))
+            return;
+        truncated.lines.assign(app->image.lines.begin(),
+                               app->image.lines.begin() + FaxImage::MAX_LINES);
+        img = &truncated;
+    }
     Fl_Native_File_Chooser nc;
     nc.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
     nc.title("Save .syn file");
@@ -308,7 +323,7 @@ static void cb_save_syn(Fl_Widget *, void *ud)
     if (path.size() < 4 || path.compare(path.size() - 4, 4, ".syn") != 0)
         path += ".syn";
     try {
-        syn_write(path, app->image, (uint8_t)app->colormode,
+        syn_write(path, *img, (uint8_t)app->colormode,
                   (uint8_t)app->invert);
         set_title(app, "saved");
     } catch (const std::exception &e) {
@@ -973,18 +988,22 @@ static void cb_live_line(void *p)
      * auto-save is armed on the .syn filter, save + clear mid-reception
      * so capture continues into a fresh image. The original fires at
      * ArgList > 758 (the preview frontier), which is this same full-
-     * buffer condition. Only the .syn branch clears, so CycleGet is a
-     * no-op for .bmp (the buffer would just keep growing past 2280,
-     * which we cap by dropping the oldest line, matching the
-     * original's clamp at 2279). */
-    if (app->settings.cycleget && app->autosave &&
-        app->autosave_fmt == 0 &&
+     * buffer condition. With auto-save off or on the .bmp filter the
+     * buffer instead grows past 2280 up to HARD_MAX_LINES (DEVIATIONS
+     * #17 - XSG charts run ~2755 lines); only past that cap is the
+     * oldest line dropped, the same clamp idea as the original's
+     * dword_4F25BC > 2279 clamp (6916). .syn auto-save without
+     * CycleGet keeps the original 2280 clamp, so the armed .syn path
+     * can never fail on an oversized buffer. */
+    bool syn_restricted = app->autosave && app->autosave_fmt == 0;
+    if (app->settings.cycleget && syn_restricted &&
         app->image.lines.size() >= (size_t)FaxImage::MAX_LINES) {
         auto_save(app);
-    } else if (app->image.lines.size() > (size_t)FaxImage::MAX_LINES) {
-        /* .bmp / non-CycleGet: clamp at 2280 like the original's
-         * dword_4F25BC > 2279 clamp (6916). */
-        app->image.lines.erase(app->image.lines.begin());
+    } else {
+        size_t cap = syn_restricted ? (size_t)FaxImage::MAX_LINES
+                                    : (size_t)FaxImage::HARD_MAX_LINES;
+        if (app->image.lines.size() > cap)
+            app->image.lines.erase(app->image.lines.begin());
     }
 }
 

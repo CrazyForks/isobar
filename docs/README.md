@@ -24,7 +24,7 @@ and the implementation plans.
 
 ## Status
 
-Phase: **working software — v1.5.2 released**. Milestone status lives in
+Phase: **working software — v1.6.0 released**. Milestone status lives in
 `../ROADMAP.md`; day-to-day state in `../SESSION-LOG.md` (private — not
 published; see "What gets published" below).
 
@@ -53,7 +53,7 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (validation & release) is mostly done — v1.5.2
+workflow is complete; M6 (validation & release) is mostly done — v1.6.0
 released, CI green on macOS/Linux/Windows, Intel and ARM; the golden-reference
 comparison and the gappy-source `LockAfter` change stay open (`../ROADMAP.md`). **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
