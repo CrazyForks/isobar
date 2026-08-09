@@ -125,7 +125,7 @@ int main()
                 for (int x = 0; x < W2; x++) {
                     const uint8_t *p = &want[((size_t)y * W2 + x) * 3];
                     f.put((char)p[2]); f.put((char)p[1]);
-                    f.put((char)p[0]); f.put((char)0xff);
+                    f.put((char)p[0]); f.put('\xff');
                 }
         }
         if (check_roundtrip(p32, want, W2, H2))
