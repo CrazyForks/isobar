@@ -7,7 +7,10 @@
  * mapping table is in docs/05-gui-layout.md.
  *
  * Functional so far:
- *   Load data  -> open .syn file (menu item 1)
+ *   Load data  -> open a .syn/.png/.bmp file (one flat menu item per
+ *                 type; images load as grayscale, rotated 90° CW into
+ *                 the sideways raster, resampled to 1500 px/line -
+ *                 DEVIATIONS #18)
  *   [dev] WAV  -> decode a WAV through the batch pipeline in core/
  *                 (menu item 2 of the same button; DEV AID, kept for
  *                 offline testing)
@@ -20,7 +23,8 @@
  *   Auto ctl   -> arm tone control: 300 Hz start tone presses Scan,
  *                 450 Hz stop tone releases it (docs/01 sec. 3.2(5))
  *   Auto save  -> opens Form8 on press; on stop tone, save
- *                 DirName/YYYYMMDDHHMM.syn (exe dir if DirName empty)
+ *                 DirName/YYYYMMDDHHMM.syn|.bmp|.png (exe dir if
+ *                 DirName empty); .png is always grayscale
  *   Quit       -> save settings (rpm/syn choices + window position) to
  *                 isobar.ini, then quit (same on title-bar close)
  * Audio capture (RtAudio) runs from program start, like the original
@@ -43,7 +47,7 @@
  * the original's Form2 progress dialog (gui/progressdialog.*) covers
  * the save/print/auto-save renders instead.
  *
- * Usage: ./isobar-gui [file.syn]
+ * Usage: ./isobar-gui [file.syn|.bmp|.png]
  *        ./isobar-gui --test-scope [file.wav]
  *        ./isobar-gui --test-color [file.wav]
  *        ./isobar-gui --test-palette <mode> [invert] [file.wav]
@@ -88,7 +92,8 @@
  *     over ~1 s (visual check of the render progress dialog).
  *   --test-autosave [file.syn] [fmt] [size] (DEV AID): load out.syn, arm
  *     auto-save (CycleGet) at /tmp, fire auto_save() once, report on
- *     stderr. fmt 0=.syn (default) / 1=.bmp; size 0..2 = bmp render scale.
+ *     stderr. fmt 0=.syn (default) / 1=.bmp / 2=.png (gray);
+ *     size 0..2 = bmp/png render scale.
  *   --test-details (DEV AID): opens the Details dialog at startup.
  *   --test-quit-save (DEV AID): runs the Quit path (settings write)
  *     immediately, so the ini write can be tested without clicking.
@@ -117,6 +122,7 @@
 #include "../core/tonedetect.h"
 #include "../core/palette.h"
 #include "../core/bmpfile.h"
+#include "../core/pngfile.h"
 
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
@@ -136,6 +142,7 @@
 #include <thread>
 #include <string>
 #include <cmath>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -181,13 +188,14 @@ struct AppState {
     bool              recording;   /* lines go into the image (Scan) */
     bool              autoctl;     /* arm tone-triggered record      */
     bool              autosave;    /* armed: save on stop tone / max width */
-    int               autosave_fmt;   /* Form8 format: 0=.syn 1=.bmp    */
+    int               autosave_fmt;   /* Form8: 0=.syn 1=.bmp 2=.png   */
     int               autosave_size;  /* Form8 image-size radio 0..2 (bmp) */
     int               colormode;   /* palette mode 0..3 (Form5)      */
     int               invert;      /* palette invert flag (Form5)    */
     uint8_t           pal[256][3]; /* built from colormode + invert  */
     int               export_kind;     /* Form6 kind, session-sticky */
     int               export_portrait; /* Form6 orientation          */
+    int               export_fmt;      /* Form6 format: 0=BMP 1=PNG  */
     FaxImage          backup;      /* pre-rotate buffer (Vertical btn) */
     bool              rotated90;   /* Button8 toggle flag (a1+1096)    */
     Fl_Button        *vertical_btn;   /* for the caption toggle      */
@@ -256,36 +264,150 @@ static void show_image(AppState *app)
 /* defined in the Vertical/XY-flip section below */
 static void reset_rotate(AppState *app);
 
-static void load_syn(AppState *app, const char *path)
+/* common tail of every image load: rotation/zoom reset, palette push,
+ * idle LEDs, cleared scope (what the original does on .syn load) */
+static void present_image(AppState *app)
 {
-    SynHeader hdr;
-    FaxImage img = syn_read(path, &hdr);   /* throws on error */
-    app->image = img;
     reset_rotate(app);
-    /* the .syn header carries the palette mode + invert (docs/01
-     * sec. 4); restore them like the original does */
-    app->colormode = hdr.mode;
-    app->invert = hdr.negative ? 1 : 0;
     apply_palette(app);
-    app->view->reset_zoom();   /* original resets zoom on .syn load */
+    app->view->reset_zoom();   /* original resets zoom on load */
     set_leds_idle(app);
     app->scope->clear();
     show_image(app);
 }
 
-/* ---- Load data (open .syn) ---- */
-
-static void cb_open_syn(Fl_Widget *, void *ud)
+static void load_syn(AppState *app, const char *path)
 {
-    AppState *app = (AppState *)ud;
-    const char *path = fl_file_chooser("Open .syn file",
-                                       "SynFax files (*.syn)\t*.syn", "");
+    SynHeader hdr;
+    FaxImage img = syn_read(path, &hdr);   /* throws on error */
+    app->image = img;
+    /* the .syn header carries the palette mode + invert (docs/01
+     * sec. 4); restore them like the original does */
+    app->colormode = hdr.mode;
+    app->invert = hdr.negative ? 1 : 0;
+    present_image(app);
+}
+
+/* Load a BMP or PNG into the fax buffer (DEVIATIONS #18 - the original
+ * loads .syn only). Color is reduced to luma; the buffer's raster
+ * convention is sideways (one row = one fax line), so the upright image
+ * file is rotated 90° CW into it - the exact inverse of the "Land."
+ * export's CCW rotation, which makes an exported chart load back the
+ * way it looked. Rows are then box-resampled to the fixed 1500 px line
+ * width when the file is narrower or wider. Palette resets to monotone:
+ * a plain image carries no color mode. */
+static void load_image(AppState *app, const char *path, int is_png)
+{
+    std::vector<uint8_t> gray;
+    int w = 0, h = 0;
+    if (is_png) {
+        png_read_gray(path, gray, &w, &h);   /* throws on error */
+    } else {
+        std::vector<uint8_t> rgb;
+        bmp_read(path, rgb, &w, &h);         /* throws on error */
+        gray.resize((size_t)w * h);
+        for (size_t i = 0; i < (size_t)w * h; i++)
+            gray[i] = (uint8_t)((77 * rgb[3 * i] + 150 * rgb[3 * i + 1]
+                                 + 29 * rgb[3 * i + 2]) >> 8);
+    }
+    /* 90° CW into the raster: old[y][x] -> new[x][h-1-y] */
+    {
+        std::vector<uint8_t> rot(gray.size());
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                rot[(size_t)x * h + (h - 1 - y)] = gray[(size_t)y * w + x];
+        gray.swap(rot);
+        int t = w; w = h; h = t;
+    }
+    FaxImage img;
+    img.lines.reserve(h);
+    for (int y = 0; y < h; y++) {
+        const uint8_t *src = &gray[(size_t)y * w];
+        std::vector<uint8_t> line(FaxImage::WIDTH);
+        if (w == FaxImage::WIDTH) {
+            memcpy(line.data(), src, FaxImage::WIDTH);
+        } else {
+            for (int x = 0; x < FaxImage::WIDTH; x++) {
+                int x0 = x * w / FaxImage::WIDTH;
+                int x1 = (x + 1) * w / FaxImage::WIDTH;
+                if (x1 <= x0) x1 = x0 + 1;
+                if (x1 > w) x1 = w;
+                int sum = 0;
+                for (int sx = x0; sx < x1; sx++)
+                    sum += src[sx];
+                line[x] = (uint8_t)(sum / (x1 - x0));
+            }
+        }
+        img.lines.push_back(std::move(line));
+    }
+    app->image = img;
+    app->colormode = 0;
+    app->invert = 0;
+    present_image(app);
+}
+
+/* lowercase extension of path including the dot ("" when none) */
+static std::string file_ext(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    if (!dot) return "";
+    std::string e = dot;
+    for (size_t i = 0; i < e.size(); i++)
+        e[i] = (char)tolower((unsigned char)e[i]);
+    return e;
+}
+
+/* Load data dispatch: .syn keeps the original's semantics (palette from
+ * the header); .bmp/.png go through the image loader. Anything else is
+ * tried as .syn, whose magic check reports the bad file. */
+static void load_data(AppState *app, const char *path)
+{
+    std::string ext = file_ext(path);
+    if (ext == ".bmp")
+        load_image(app, path, 0);
+    else if (ext == ".png")
+        load_image(app, path, 1);
+    else
+        load_syn(app, path);
+}
+
+/* ---- Load data (open .syn/.png/.bmp) ---- */
+
+/* One menu item per loadable type (user decision 2026-08-09 - flat
+ * items, not one combined filter; FLTK's chooser adds "All Files" on
+ * its own). Dispatch stays on the picked file's extension, so an
+ * "All Files" pick still lands in the right loader.
+ * NOTE: never put "/" in a menu label - FLTK reads it as a submenu
+ * separator (that's how "Load data (.syn/.bmp/.png)..." turned into
+ * nested submenus). */
+static void open_with_filter(AppState *app, const char *title,
+                             const char *filter)
+{
+    const char *path = fl_file_chooser(title, filter, "");
     if (!path) return;
     try {
-        load_syn(app, path);
+        load_data(app, path);
     } catch (const std::exception &e) {
         fl_alert("cannot load %s:\n%s", path, e.what());
     }
+}
+
+static void cb_open_syn(Fl_Widget *, void *ud)
+{
+    open_with_filter((AppState *)ud, "Open .syn file",
+                     "SynFax files (*.syn)\t*.syn");
+}
+
+static void cb_open_png(Fl_Widget *, void *ud)
+{
+    open_with_filter((AppState *)ud, "Open PNG file",
+                     "PNG image files (*.png)\t*.png");
+}
+
+static void cb_open_bmp(Fl_Widget *, void *ud)
+{
+    open_with_filter((AppState *)ud, "Open BMP file",
+                     "Bitmap files (*.bmp)\t*.bmp");
 }
 
 /* ---- Save data (save .syn) ---- */
@@ -366,6 +488,35 @@ static void render_export_rgb(const FaxImage &img, int scale,
     *oh = h;
 }
 
+/* grayscale box-average render at the given scale (the autosave PNG:
+ * never colorized - invert is the one display option that applies) */
+static void render_export_gray(const FaxImage &img, int scale, int invert,
+                               std::vector<uint8_t> &out, int *ow, int *oh)
+{
+    const int sw = FaxImage::WIDTH;
+    const int sh = (int)img.lines.size();
+    int w = sw / scale;
+    int h = (sh + scale - 1) / scale;
+    out.assign((size_t)w * h, 0);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int sum = 0, n = 0;
+            for (int dy = 0; dy < scale; dy++)
+                for (int dx = 0; dx < scale; dx++) {
+                    int sy = y * scale + dy, sx = x * scale + dx;
+                    if (sy < sh && sx < sw) {
+                        sum += img.lines[sy][sx];
+                        n++;
+                    }
+                }
+            uint8_t v = (uint8_t)(n ? sum / n : 0);
+            out[(size_t)y * w + x] = invert ? (uint8_t)(255 - v) : v;
+        }
+    }
+    *ow = w;
+    *oh = h;
+}
+
 /* 90-degree counter-clockwise rotation of a packed RGB buffer (the
  * "Land." export; the spec only says "transposed" - the direction was
  * a guess until user testing 2026-07-31 showed CW gives an upside-down
@@ -395,19 +546,23 @@ static void cb_save_image(Fl_Widget *, void *ud)
         fl_alert("no image to save");
         return;
     }
-    /* Form6: kind + orientation (session-sticky, like the original) */
-    if (!export_dialog_run(&app->export_kind, &app->export_portrait))
+    /* Form6: kind + orientation + format (session-sticky, like the
+     * original's kind/orientation) */
+    if (!export_dialog_run(&app->export_kind, &app->export_portrait,
+                           &app->export_fmt))
         return;
 
+    int png = app->export_fmt == 1;
+    const char *ext = png ? ".png" : ".bmp";
     Fl_Native_File_Chooser nc;
     nc.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
     nc.title("Save image");
-    nc.filter("Bitmap files\t*.bmp\n");
-    nc.preset_file("fax.bmp");
+    nc.filter(png ? "PNG files\t*.png\n" : "Bitmap files\t*.bmp\n");
+    nc.preset_file(png ? "fax.png" : "fax.bmp");
     if (nc.show() != 0) return;   /* cancelled */
     std::string path = nc.filename();
-    if (path.size() < 4 || path.compare(path.size() - 4, 4, ".bmp") != 0)
-        path += ".bmp";
+    if (path.size() < 4 || path.compare(path.size() - 4, 4, ext) != 0)
+        path += ext;
 
     /* kinds 1..3 = 3x3 / 2x2 / 1x1 box-average renders */
     static const int scale_of[4] = { 1, 3, 2, 1 };
@@ -443,7 +598,20 @@ static void cb_save_image(Fl_Widget *, void *ud)
     if (!app->export_portrait && app->export_kind != 0)
         rotate90ccw(rgb, &w, &h);
     try {
-        bmp_write(path, rgb.data(), w, h);
+        if (png && app->colormode == 0) {
+            /* monotone palette: write a true grayscale PNG (much smaller
+             * than RGB). The palette stays gray even when inverted, so
+             * the R channel carries the final value. */
+            std::vector<uint8_t> gray((size_t)w * h);
+            for (size_t i = 0; i < (size_t)w * h; i++)
+                gray[i] = rgb[3 * i];
+            png_write_gray(path, gray.data(), w, h);
+        } else if (png) {
+            /* a color palette is applied: color PNG */
+            png_write_rgb(path, rgb.data(), w, h);
+        } else {
+            bmp_write(path, rgb.data(), w, h);
+        }
         set_title(app, "image saved");
     } catch (const std::exception &e) {
         fl_alert("cannot save %s:\n%s", path.c_str(), e.what());
@@ -988,8 +1156,9 @@ static void cb_live_line(void *p)
      * auto-save is armed on the .syn filter, save + clear mid-reception
      * so capture continues into a fresh image. The original fires at
      * ArgList > 758 (the preview frontier), which is this same full-
-     * buffer condition. With auto-save off or on the .bmp filter the
-     * buffer instead grows past 2280 up to HARD_MAX_LINES (DEVIATIONS
+     * buffer condition. With auto-save off or on the .bmp/.png filters
+     * the buffer instead grows past 2280 up to HARD_MAX_LINES
+     * (DEVIATIONS
      * #17 - XSG charts run ~2755 lines); only past that cap is the
      * oldest line dropped, the same clamp idea as the original's
      * dword_4F25BC > 2279 clamp (6916). .syn auto-save without
@@ -1209,9 +1378,11 @@ static void record_off(AppState *app)
 }
 
 /* Auto-save (sub_40C858, docs/01 sec. 4 "Auto-save"): the output format
- * comes from Form8's filter (.syn default / .bmp). Either is named
+ * comes from Form8's filter (.syn default / .bmp / .png). Either is named
  * DirName/YYYYMMDDHHMM.<ext>. The .syn branch CLEARS the buffer
- * afterward (matching the original); .bmp does not (also matches). */
+ * afterward (matching the original); .bmp and .png do not (the .bmp
+ * asymmetry is the original's; .png follows it). .png is our addition:
+ * always grayscale (DEVIATIONS #15, amended 2026-08-09). */
 static void auto_save(AppState *app)
 {
     if (app->image.lines.empty())
@@ -1229,13 +1400,39 @@ static void auto_save(AppState *app)
                             * Windows); next-to-exe is the sane macOS
                             * equivalent (DEVIATIONS.md #10) */
 
+    static const int scale_of[3] = { 3, 2, 1 };
+    if (app->autosave_fmt == 2) {
+        /* .png: GRAYSCALE box-average render at the Form8 size scale -
+         * never colorized, even when a palette is active (user decision
+         * 2026-08-09: auto-save PNG is the small archival format).
+         * Like .bmp, no buffer clear on this branch. */
+        std::vector<uint8_t> gray;
+        int w, h;
+        {   /* Form2 progress dialog around the png render */
+            ProgressScope ps(app->win->x(), app->win->y(),
+                             app->win->w(), app->win->h());
+            render_export_gray(app->image, scale_of[app->autosave_size],
+                               app->invert, gray, &w, &h);
+            ps.update(1.0);
+        }
+        std::string path = dir + "/" + stem + ".png";
+        try {
+            png_write_gray(path, gray.data(), w, h);
+            char buf[160];
+            snprintf(buf, sizeof buf, "auto-saved %s.png", stem);
+            set_title(app, buf);
+        } catch (const std::exception &e) {
+            fl_alert("auto-save failed:\n%s", e.what());
+        }
+        return;
+    }
+
     if (app->autosave_fmt == 1) {
         /* .bmp: box-average render at the Form8 size scale (docs/01
          * sec. 4, switch at 12054: case 1=3x3, 2=2x2, 3=1:1). The
          * original renders sideways (w=line count, h=1500); we render
          * upright like the manual Save-image BMP (consistent with
          * DEVIATIONS #14). No buffer clear on this branch. */
-        static const int scale_of[3] = { 3, 2, 1 };
         std::vector<uint8_t> rgb;
         int w, h;
         {   /* Form2 progress dialog around the bmp render */
@@ -1534,7 +1731,9 @@ static void build_ui(AppState *app)
 
     /* bottom button row, y=520, 90x25 (BitBtn1 105x25) */
     Fl_Menu_Button *open = new Fl_Menu_Button(8, 520, 90, 25, "Load data");
-    open->add("Load data (.syn)...", 0, cb_open_syn, app);
+    open->add("Load .syn...", 0, cb_open_syn, app);
+    open->add("Load .png...", 0, cb_open_png, app);
+    open->add("Load .bmp...", 0, cb_open_bmp, app);
     open->add("[dev] Decode WAV...", 0, cb_decode_wav, app);
     open->label("Load data");   /* keep original caption on the button */
     Fl_Button *b;
@@ -1594,6 +1793,7 @@ int main(int argc, char **argv)
     app.invert = 0;
     app.export_kind = 0;
     app.export_portrait = 0;
+    app.export_fmt = 0;      /* Form6: BMP */
     app.rotated90 = false;
     app.vertical_btn = 0;   /* set in build_ui */
     g_app = &app;
@@ -1765,8 +1965,8 @@ int main(int argc, char **argv)
         /* DEV AID: --test-autosave [file.syn] [fmt] [size]: load the
          * .syn, arm auto-save (CycleGet) pointed at /tmp, fire
          * auto_save() once, report whether the file was written + the
-         * buffer state. fmt 0=.syn (default) / 1=.bmp; size 0..2 is the
-         * bmp render scale. */
+         * buffer state. fmt 0=.syn (default) / 1=.bmp / 2=.png (gray);
+         * size 0..2 is the bmp/png render scale. */
         try {
             load_syn(&app, argc > 2 ? argv[2] : "out.syn");
         } catch (const std::exception &e) {
@@ -1783,7 +1983,9 @@ int main(int argc, char **argv)
                 "now %zu lines; check /tmp for a YYYYMMDDHHMM.%s\n",
                 app.autosave_fmt, app.autosave_size, before,
                 app.image.lines.size(),
-                app.autosave_fmt == 1 ? "bmp" : "syn");
+                app.autosave_fmt == 2 ? "png"
+                                      : (app.autosave_fmt == 1 ? "bmp"
+                                                               : "syn"));
     } else if (argc > 1 && strcmp(argv[1], "--test-quit-save") == 0) {
         /* DEV AID: run the Quit path right away (tests the ini write
          * without clicking; window hides -> Fl::run() returns). */
@@ -1834,7 +2036,7 @@ int main(int argc, char **argv)
         start_audio(&app);
         if (argc > 1) {
             try {
-                load_syn(&app, argv[1]);
+                load_data(&app, argv[1]);
             } catch (const std::exception &e) {
                 fl_alert("cannot load %s:\n%s", argv[1], e.what());
             }

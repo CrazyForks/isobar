@@ -46,8 +46,9 @@ rewrite to the original's fixed 4000-sample grid cadence).
 ## M1 — Main window skeleton ✅
 Exact TForm1 geometry (888×551) extracted from the original binary's form
 resources (`tools/extract_dfm.py` → `docs/05-gui-layout.md`). English UI
-(DEVIATIONS #5). Open `.syn`, Decode WAV (worker thread), Save `.syn`,
-Clear, Quit all functional.
+(DEVIATIONS #5). Open `.syn` (also BMP/PNG images since 2026-08-09 —
+grayscale, resampled to 1500 px/line, DEVIATIONS #18), Decode WAV
+(worker thread), Save `.syn`, Clear, Quit all functional.
 - ✅ Layout matches original coordinates (screenshot-verified)
 - ✅ Preview (760×500, the original's Image1): always the column view —
   one column per 3 lines, line start at the bottom, no scrolling
@@ -79,17 +80,19 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
 - ✅ Form5 color processing (4 palette modes, invert-first, `.syn`
   header round-trip; `gui/colordialog.*`; `--test-color` /
   `--test-palette` dev flags, screenshot-verified)
-- ✅ Form6 bitmap save options + BMP export (`gui/exportdialog.*`,
-  `core/bmpfile.*`; native chooser instead of Form3, BMP-only, no
-  clipboard — DEVIATIONS #12; orientation labels deliberately swapped,
-  Land. = 90° CCW rotated / Port. = as-is — DEVIATIONS #14;
-  `--test-export` + user hand-test verified)
+- ✅ Form6 bitmap save options + BMP/PNG export (`gui/exportdialog.*`,
+  `core/bmpfile.*`, `core/pngfile.*`; native chooser instead of Form3,
+  no clipboard — DEVIATIONS #12; PNG added 2026-08-09: grayscale in
+  monotone mode, color when a palette is applied; orientation labels
+  deliberately swapped, Land. = 90° CCW rotated / Port. = as-is —
+  DEVIATIONS #14; `--test-export` + user hand-test verified)
 - ✅ Form8 auto-save settings (`gui/autosavedialog.*`; native dir
   chooser instead of listboxes — DEVIATIONS #13; SpeedButton3
   open-on-press-down / OK-arm / Cancel-disarm semantics;
   `--test-autosave-dialog` screenshot-verified). Now also carries the
-  **output-format radio** (.syn/.bmp, replacing the original's
-  FilterComboBox1 — DEVIATIONS #15) and the size radios + CycleGet are
+  **output-format radio** (.syn/.bmp/.png, replacing the original's
+  FilterComboBox1 — DEVIATIONS #15; .png added 2026-08-09, always
+  grayscale) and the size radios + CycleGet are
   **live** (the auto-save BMP + restart-at-max-width features landed
   — see M5)
 - ✅ Form10 recording notice (`gui/noticedialog.*`) + Form2 progress

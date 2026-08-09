@@ -14,7 +14,8 @@ statement.
 specification and the implementation plans.
 
 Target platforms: macOS / Linux / Windows, Intel and ARM alike. Built with
-FLTK (GUI) and RtAudio (live audio). Licensed under GPLv3+ (see `LICENSE`).
+FLTK (GUI), RtAudio (live audio) and zlib (PNG compression). Licensed under
+GPLv3+ (see `LICENSE`).
 Prebuilt self-contained packages — two macOS `.dmg`s (Apple Silicon, Intel),
 a Windows `.zip`, and x86_64 + aarch64 AppImages — are attached to each
 [Release](https://github.com/skgsara/isobar/releases); see the README's

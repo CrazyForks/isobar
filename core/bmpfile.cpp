@@ -2,6 +2,7 @@
 #include "bmpfile.h"
 
 #include <fstream>
+#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -62,4 +63,64 @@ void bmp_write(const std::string &path, const uint8_t *rgb, int w, int h)
     }
     if (!f)
         throw std::runtime_error("bmp_write: write failed");
+}
+
+static unsigned get16(const uint8_t *p)
+{
+    return p[0] | ((unsigned)p[1] << 8);
+}
+
+static unsigned long get32(const uint8_t *p)
+{
+    return p[0] | ((unsigned long)p[1] << 8) | ((unsigned long)p[2] << 16) |
+           ((unsigned long)p[3] << 24);
+}
+
+void bmp_read(const std::string &path, std::vector<uint8_t> &rgb,
+              int *ow, int *oh)
+{
+    std::ifstream f(path.c_str(), std::ios::binary);
+    if (!f)
+        throw std::runtime_error("bmp_read: cannot open " + path);
+    std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)),
+                              std::istreambuf_iterator<char>());
+    if (file.size() < 54 || file[0] != 'B' || file[1] != 'M')
+        throw std::runtime_error("bmp_read: not a BMP file: " + path);
+
+    unsigned long data_off = get32(&file[10]);
+    unsigned long hdr_size = get32(&file[14]);
+    if (hdr_size < 40)
+        throw std::runtime_error("bmp_read: unsupported header: " + path);
+    /* width/height are signed 32-bit on disk; route through int32_t so a
+     * negative (top-down) height sign-extends correctly on 64-bit long */
+    long w = (long)(int32_t)get32(&file[18]);
+    long h = (long)(int32_t)get32(&file[22]);   /* negative = top-down */
+    int bits = (int)get16(&file[28]);
+    unsigned long compression = get32(&file[30]);
+    if (w <= 0 || h == 0)
+        throw std::runtime_error("bmp_read: empty image");
+    if (compression != 0 || (bits != 24 && bits != 32))
+        throw std::runtime_error(
+            "bmp_read: only uncompressed 24/32-bit BMP is supported: " + path);
+
+    int top_down = h < 0;
+    if (top_down) h = -h;
+    int bpp = bits / 8;
+    unsigned long stride = ((unsigned long)w * bpp + 3) & ~3UL;
+    if (data_off + stride * (unsigned long)h > file.size())
+        throw std::runtime_error("bmp_read: truncated file");
+
+    rgb.assign((size_t)w * h * 3, 0);
+    for (long y = 0; y < h; y++) {
+        long sy = top_down ? y : h - 1 - y;
+        const uint8_t *src = &file[data_off + (size_t)sy * stride];
+        uint8_t *dst = &rgb[(size_t)y * w * 3];
+        for (long x = 0; x < w; x++) {
+            dst[3 * x]     = src[bpp * x + 2];   /* R */
+            dst[3 * x + 1] = src[bpp * x + 1];   /* G */
+            dst[3 * x + 2] = src[bpp * x];       /* B */
+        }
+    }
+    *ow = (int)w;
+    *oh = (int)h;
 }

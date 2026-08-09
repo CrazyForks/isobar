@@ -9,10 +9,10 @@
  * group-relative + group origin).
  *
  * The original's FilterComboBox1 (syn/bmp/jpg, at 208,141) becomes a
- * two-radio "Save format" group at the same spot (JPEG dropped -
- * DEVIATIONS #15). Picking .syn disables the size radios (the
- * original's FilterComboBox1Change disables them + the drive controls
- * for the syn filter).
+ * three-radio "Save format" group at the same spot (JPEG dropped -
+ * DEVIATIONS #15; .png added 2026-08-09, always grayscale). Picking
+ * .syn disables the size radios (the original's FilterComboBox1Change
+ * disables them + the drive controls for the syn filter).
  */
 #include "autosavedialog.h"
 
@@ -35,7 +35,7 @@ struct Dlg {
     std::string dir;
     Fl_Output *path;
     Fl_Widget *size_widgets[4];   /* group + 3 radios, to enable/disable */
-    Fl_Radio_Round_Button *fmt_widgets[2];  /* syn / bmp radios     */
+    Fl_Radio_Round_Button *fmt_widgets[3];  /* syn / bmp / png radios */
 };
 
 void cb_ok(Fl_Widget *w, void *ud)
@@ -63,15 +63,15 @@ void cb_browse(Fl_Widget *, void *ud)
 }
 
 /* Like the original's FilterComboBox1Change: the size radios only
- * matter for the bmp render, so grey them out when .syn is chosen.
- * Either radio's callback reaches here; we just re-derive the choice
- * from which of the two is now selected. */
+ * matter for the bmp/png renders, so grey them out when .syn is chosen.
+ * Any radio's callback reaches here; we just re-derive the choice from
+ * which is now selected. */
 void cb_fmt(Fl_Widget *, void *ud)
 {
     Dlg *d = (Dlg *)ud;
-    int bmp = d->fmt_widgets[1]->value() != 0;
+    int scaled = d->fmt_widgets[1]->value() || d->fmt_widgets[2]->value();
     for (int i = 0; i < 4; i++) {
-        if (bmp)
+        if (scaled)
             d->size_widgets[i]->activate();
         else
             d->size_widgets[i]->deactivate();
@@ -92,7 +92,7 @@ int autosave_dialog_run(std::string *dirname, int *cycleget,
     d.path = 0;
     for (int i = 0; i < 4; i++)
         d.size_widgets[i] = 0;
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
         d.fmt_widgets[i] = 0;
 
     /* Form8: client 558x167 */
@@ -137,22 +137,28 @@ int autosave_dialog_run(std::string *dirname, int *cycleget,
     d.size_widgets[2] = r1;
     d.size_widgets[3] = r2;
 
-    /* Save format group (replaces FilterComboBox1 at 208,141): two
-     * radios, .syn (default) / .bmp. JPEG is not offered (DEVIATIONS
-     * #15). Size radios are meaningful only for bmp. */
+    /* Save format group (replaces FilterComboBox1 at 208,141): three
+     * radios, .syn (default) / .bmp / .png. JPEG is not offered
+     * (DEVIATIONS #15); .png is our addition, always grayscale
+     * (DEVIATIONS #15, amended 2026-08-09). Size radios are meaningful
+     * for bmp and png. */
     Fl_Group *fg = new Fl_Group(208, 132, 185, 30, "Save format");
     fg->box(FL_ENGRAVED_BOX);
     fg->align(FL_ALIGN_TOP | FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     fg->labelsize(10);
-    Fl_Radio_Round_Button *fsyn = new Fl_Radio_Round_Button(214, 144, 70, 17,
+    Fl_Radio_Round_Button *fsyn = new Fl_Radio_Round_Button(214, 144, 50, 17,
                                                             ".syn");
-    Fl_Radio_Round_Button *fbmp = new Fl_Radio_Round_Button(290, 144, 70, 17,
+    Fl_Radio_Round_Button *fbmp = new Fl_Radio_Round_Button(268, 144, 50, 17,
                                                             ".bmp");
+    Fl_Radio_Round_Button *fpng = new Fl_Radio_Round_Button(322, 144, 64, 17,
+                                                            ".png");
     fsyn->callback(cb_fmt, &d);
     fbmp->callback(cb_fmt, &d);
+    fpng->callback(cb_fmt, &d);
     fg->end();
     d.fmt_widgets[0] = fsyn;
     d.fmt_widgets[1] = fbmp;
+    d.fmt_widgets[2] = fpng;
 
     Fl_Return_Button *ok = new Fl_Return_Button(399, 138, 73, 23, "OK");
     ok->callback(cb_ok, &d);
@@ -161,13 +167,13 @@ int autosave_dialog_run(std::string *dirname, int *cycleget,
 
     dlg->end();
 
-    if (d.fmt != 0 && d.fmt != 1)
+    if (d.fmt < 0 || d.fmt > 2)
         d.fmt = 0;
     if (d.size < 0 || d.size > 2)
         d.size = 0;
-    (d.fmt == 1 ? fbmp : fsyn)->setonly();
+    (d.fmt == 2 ? fpng : (d.fmt == 1 ? fbmp : fsyn))->setonly();
     (d.size == 2 ? r2 : (d.size == 1 ? r1 : r0))->setonly();
-    cb_fmt(fsyn, &d);   /* apply initial syn/bmp enable state */
+    cb_fmt(fsyn, &d);   /* apply initial syn/bmp/png enable state */
 
     dlg->show();
     while (dlg->shown())
@@ -177,7 +183,7 @@ int autosave_dialog_run(std::string *dirname, int *cycleget,
     if (accepted) {
         *dirname = d.dir;
         *cycleget = cyc->value() != 0;
-        *fmt = fbmp->value() ? 1 : 0;
+        *fmt = fpng->value() ? 2 : (fbmp->value() ? 1 : 0);
         *size = r2->value() ? 2 : (r1->value() ? 1 : 0);
     }
     delete dlg;

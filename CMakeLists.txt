@@ -120,6 +120,11 @@ else()
     endif()
 endif()
 
+# zlib: needed by core/pngfile.cpp (PNG read/write). Available everywhere
+# we build: macOS system zlib, zlib1g-dev on Linux CI, and vcpkg builds it
+# as an FLTK dependency on Windows.
+find_package(ZLIB REQUIRED)
+
 # RtAudio: prefer a CMake config (vcpkg → RtAudio::rtaudio), then pkg-config
 # (Homebrew/apt ship rtaudio.pc), then a manual find as a last resort. The
 # manual find only recovers headers + the base lib, so config/pkg-config are
@@ -169,10 +174,13 @@ add_library(isobar_core STATIC
     core/live.cpp         core/live.h
     core/resample.cpp     core/resample.h
     core/bmpfile.cpp      core/bmpfile.h
+    core/pngfile.cpp      core/pngfile.h
     core/palette.cpp      core/palette.h)
 target_include_directories(isobar_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR})   # for the generated isobar_version.h
+# PNG I/O (core/pngfile.cpp) is the core's one external dependency.
+target_link_libraries(isobar_core PUBLIC ZLIB::ZLIB)
 
 # --- GUI sources (FLTK) ------------------------------------------------------
 set(GUI_SRC
@@ -349,6 +357,8 @@ add_isobar_test(reacq-test)
 # Self-contained synthetic/core tests (no WAV needed; the helper's
 # source-root working directory costs nothing).
 add_isobar_test(synfile-test)
+add_isobar_test(pngfile-test)
+add_isobar_test(bmpfile-test)
 add_isobar_test(palette-test)
 add_isobar_test(demod-test)
 add_isobar_test(phase-lock-test)

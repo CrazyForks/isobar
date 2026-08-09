@@ -248,7 +248,8 @@ The drive/dir/file listboxes are replaced by a read-only path field +
 "Browse…" (native directory chooser, DEVIATIONS #13). **FilterComboBox1
 is the auto-save output FORMAT** (docs/01 §4: filter 0 = `*.syn`, 1 =
 `*.bmp`, 2 = `*.jpg`); FLTK has no filter combo, so the port replaces it
-with a two-button radio (.syn / .bmp — JPEG dropped, DEVIATIONS #15).
+with a radio group (.syn / .bmp / .png — JPEG dropped, DEVIATIONS #15;
+.png added 2026-08-09, always grayscale).
 `FilterComboBox1Change` in the original enables the size radios + drive
 controls only for bmp/jpg; the port disables the size radios when .syn
 is chosen, same effect. Implemented as `gui/autosavedialog.*`.

@@ -210,13 +210,17 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     cadence + phase-offset tracking model, so the period-nudging
     deviation no longer exists. Number retained to keep the sequence
     stable (other entries cross-reference #12–#15 by number).
-12. **Image export is BMP-only, no clipboard output, native file
+12. **Image export is BMP or PNG, no clipboard output, native file
     dialog.** The original's Form6 has an "output to clipboard"
     checkbox and its Form3 dialog offers BMP or JPEG. FLTK has no
-    image-clipboard support and no JPEG writer, so Save image always
-    writes a 24-bit BMP via the native save dialog (kind + orientation
-    options kept, in a Form6-replica dialog). For the orientation
-    mapping/rotation see #14.
+    image-clipboard support and no JPEG writer, so Save image writes
+    via the native save dialog (kind + orientation options kept, in a
+    Form6-replica dialog). For the orientation mapping/rotation see #14.
+    **Amended 2026-08-09:** the dialog gained a Format group (BMP /
+    PNG — the window grew downward; the original groups keep their
+    Form6 coordinates). PNG is written as true 8-bit grayscale when the
+    monotone palette is active (much smaller), and as RGB when a color
+    palette is applied — the same pixels the BMP would carry.
 13. **Form8's drive/dir/file listboxes are a native directory
     chooser.** The original's auto-save settings dialog has Win31-style
     DriveComboBox/DirectoryListBox/FileListBox controls. We show a
@@ -236,15 +240,17 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     dropdown; JPEG is dropped.** The original's Form8 picks the auto-save
     output format with a Win31 `TFilterComboBox` listing `*.syn` / `*.bmp`
     / `*.jpg` (docs/01 §4 "Auto-save"). FLTK has no equivalent combo, so
-    the port replaces it with a two-button radio group (.syn / .bmp).
+    the port replaces it with a radio group (.syn / .bmp / .png).
     The `.jpg` (index 2) branch is not ported — it needs the VCL JPEG
-    unit and we have no JPEG writer — so the port offers syn/bmp only.
-    The choice is runtime-only like the original's (the filter index has
-    no ini key); the size radios are enabled only when .bmp is selected,
-    matching the original's `FilterComboBox1Change`. Both branches match
-    the original's save semantics exactly: `.syn` clears the buffer
-    afterward, `.bmp` does not (the asymmetry is in the trace, preserved
-    faithfully).
+    unit and we have no JPEG writer. The `.png` choice is our addition
+    (2026-08-09, user request): it always writes 8-bit **grayscale**,
+    even when a color palette is active — auto-save PNG is the small
+    archival format. The choice is runtime-only like the original's (the
+    filter index has no ini key); the size radios are enabled for .bmp
+    and .png, matching the original's `FilterComboBox1Change`. The .syn
+    branch matches the original's save semantics exactly (clears the
+    buffer afterward); .bmp does not clear it (the asymmetry is in the
+    trace, preserved faithfully), and .png follows the .bmp behavior.
 
 17. **The receive buffer grows past the original's 2280-line clamp, up
     to 4560 lines.** The original's image buffer is a fixed 1500×2280
@@ -264,3 +270,18 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     zoom-1/2 pan ranges grow with the line count, and printing an
     extended image fills the whole page (the 2280-line ruler only
     shrinks partial receptions).
+
+18. **Load data also accepts BMP and PNG images** (added 2026-08-09,
+    user request). The original loads `.syn` only. The port's
+    Load-data menu takes `.syn` / `.png` / `.bmp` (one flat item per
+    type): an image file is reduced to grayscale (ITU-R 601 luma for
+    color input), rotated 90° CW into the buffer's sideways raster —
+    the exact inverse of the "Land." export's CCW rotation, so an
+    exported or auto-saved chart loads back the way it looked; a
+    raster-orientation ("Port.") file conversely loads rotated, there
+    is no way to tell the two apart — then each row is box-resampled to
+    the fixed 1500 px line width when the file is narrower or wider,
+    and the palette resets to monotone — a plain image carries no
+    color mode, unlike a `.syn` header. PNG input is limited to 8-bit
+    non-interlaced grayscale/RGB/RGBA; BMP input to uncompressed
+    24/32-bit. Unsupported variants fail with a clear error message.

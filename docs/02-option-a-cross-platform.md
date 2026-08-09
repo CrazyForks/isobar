@@ -31,14 +31,15 @@ recommendation: Qt 6 + RtAudio.**
 
 ```
 isobar/
-├── core/                    # framework-agnostic, C++17, dependency-free
+├── core/                    # framework-agnostic, C++17; only dep is zlib (PNG)
 │   ├── decoder.{h,cpp}      # BPF → Hilbert/atan2 demod → LPF → decimate
 │   ├── filters.{h,cpp}      # FIR BPF/LPF (coefficients re-derived, not copied)
 │   ├── syncscan.{h,cpp}     # sync detect + fallback tracker + line rotate
 │   ├── live.{h,cpp}         # streaming scan (cadence+phase model)
 │   ├── tonedetect.{h,cpp}   # 300/450 Hz resonators (docs/01 §3.2(5))
 │   ├── palette.{h,cpp}      # gray / 2 gradients / rainbow / negative
-│   ├── bmpfile.{h,cpp}      # BMP export (Form6 path)
+│   ├── bmpfile.{h,cpp}      # BMP write (Form6 path) + read (image input)
+│   ├── pngfile.{h,cpp}      # PNG write (gray/RGB) + read (→ luma), on zlib
 │   ├── synfile.{h,cpp}      # .syn read/write ("SynFax2" + legacy "Syn Fax")
 │   ├── wavfile.{h,cpp}      # WAV reader (any rate ≥ 6000 Hz → 22050,
 │   │                        #   PCM incl. WAVE_FORMAT_EXTENSIBLE)
@@ -53,7 +54,7 @@ isobar/
 │   ├── faxview / scopeview  # Image1 preview + Image3 spectrum/waterfall
 │   ├── *dialog.cpp          # Form2/4/5/6/8/9/10 replicas
 │   └── audio.cpp            # RtAudio live input (22050 Hz mono callback)
-└── tests via ctest          # 18 headless tests (cli/*-test.cpp)
+└── tests via ctest          # 20 headless tests (cli/*-test.cpp)
 ```
 
 Threading: dedicated audio callback → lock-free ring buffer → **decoder thread**

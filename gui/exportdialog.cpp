@@ -1,9 +1,12 @@
 /* exportdialog.cpp - see exportdialog.h.
  *
- * Layout follows Form6 (docs/05-gui-layout.md): 290x103 client, kind
- * group at (8,8,129,89), orientation group at (144,8,137,41), OK at
- * (144,72), Cancel at (216,72). Choosing kind 0 disables orientation
- * (like the original). English captions (DEVIATIONS #5).
+ * Layout follows Form6 (docs/05-gui-layout.md) for the original's
+ * controls: kind group at (8,8,129,89), orientation group at
+ * (144,8,137,41). Choosing kind 0 disables orientation (like the
+ * original). The Format group and the window's extra height are our
+ * addition (the original picks BMP/JPG in its separate Form3 dialog);
+ * OK/Cancel moved down to keep the original spacing. English captions
+ * (DEVIATIONS #5).
  */
 #include "exportdialog.h"
 
@@ -18,9 +21,10 @@ namespace {
 
 struct Dlg {
     int ok;
-    int kind, portrait;
+    int kind, portrait, fmt;
     Fl_Radio_Round_Button *k0, *k1, *k2, *k3;
     Fl_Radio_Round_Button *o_land, *o_port;
+    Fl_Radio_Round_Button *f_bmp, *f_png;
 };
 
 void cb_kind(Fl_Widget *w, void *ud)
@@ -46,6 +50,12 @@ void cb_orient(Fl_Widget *w, void *ud)
     d->portrait = (w == d->o_port) ? 1 : 0;
 }
 
+void cb_fmt(Fl_Widget *w, void *ud)
+{
+    Dlg *d = (Dlg *)ud;
+    d->fmt = (w == d->f_png) ? 1 : 0;
+}
+
 void cb_ok(Fl_Widget *w, void *ud)
 {
     Dlg *d = (Dlg *)ud;
@@ -60,15 +70,16 @@ void cb_cancel(Fl_Widget *w, void *)
 
 } /* namespace */
 
-int export_dialog_run(int *kind, int *portrait)
+int export_dialog_run(int *kind, int *portrait, int *fmt)
 {
     Dlg d;
     d.ok = 0;
     d.kind = *kind;
     d.portrait = *portrait;
+    d.fmt = *fmt;
 
-    /* Form6: client 290x103 */
-    Fl_Double_Window *dlg = new Fl_Double_Window(290, 103, "Bitmap type");
+    /* Form6 client was 290x103; +42 px of height for the Format row */
+    Fl_Double_Window *dlg = new Fl_Double_Window(290, 145, "Bitmap type");
     dlg->set_modal();
 
     Fl_Group *kg = new Fl_Group(8, 8, 129, 89, "Image type");
@@ -89,16 +100,26 @@ int export_dialog_run(int *kind, int *portrait)
     d.o_port = new Fl_Radio_Round_Button(224, 24, 41, 17, "Port.");
     og->end();
 
+    Fl_Group *fg = new Fl_Group(144, 52, 137, 41, "Format");
+    fg->box(FL_ENGRAVED_BOX);
+    fg->align(FL_ALIGN_TOP | FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+    fg->labelsize(10);
+    d.f_bmp = new Fl_Radio_Round_Button(160, 68, 41, 17, "BMP");
+    d.f_png = new Fl_Radio_Round_Button(224, 68, 41, 17, "PNG");
+    fg->end();
+
     d.k0->callback(cb_kind, &d);
     d.k1->callback(cb_kind, &d);
     d.k2->callback(cb_kind, &d);
     d.k3->callback(cb_kind, &d);
     d.o_land->callback(cb_orient, &d);
     d.o_port->callback(cb_orient, &d);
+    d.f_bmp->callback(cb_fmt, &d);
+    d.f_png->callback(cb_fmt, &d);
 
-    Fl_Return_Button *ok = new Fl_Return_Button(144, 72, 65, 25, "OK");
+    Fl_Return_Button *ok = new Fl_Return_Button(144, 112, 65, 25, "OK");
     ok->callback(cb_ok, &d);
-    Fl_Button *can = new Fl_Button(216, 72, 65, 25, "Cancel");
+    Fl_Button *can = new Fl_Button(216, 112, 65, 25, "Cancel");
     can->callback(cb_cancel);
 
     dlg->end();
@@ -109,6 +130,8 @@ int export_dialog_run(int *kind, int *portrait)
     kr[d.kind]->setonly();
     if (d.portrait) d.o_port->setonly();
     else            d.o_land->setonly();
+    if (d.fmt)  d.f_png->setonly();
+    else        d.f_bmp->setonly();
     cb_kind(kr[d.kind], &d);   /* apply the kind-0 disable rule */
 
     dlg->show();
@@ -119,6 +142,7 @@ int export_dialog_run(int *kind, int *portrait)
     if (accepted) {
         *kind = d.kind;
         *portrait = d.portrait;
+        *fmt = d.fmt;
     }
     delete dlg;
     return accepted;

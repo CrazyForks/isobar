@@ -55,7 +55,11 @@ To build from source instead, see [Build](#build).
 - **Live reception** from any sound input, or **offline decode** from a WAV
   recording. Spectrum scope + waterfall shown live during reception.
 - **Image tools**: zoom/pan, vertical rotate toggle, XY flip, 4 color
-  palettes, BMP export, print.
+  palettes, BMP/PNG export (color when a palette is applied, grayscale
+  otherwise), print. BMP and grayscale PNG files can also be loaded back
+  as images.
+- **Auto-save** on stop tone or at max scan width: `.syn`, `.bmp`, or
+  grayscale `.png` (the small archival format).
 - **KG-FAX interop**: round-trips `.syn` files (including the radix-255
   line-count encoding and palette mode/invert bits in the header), and
   reads the older legacy "Syn Fax" variant (fixed 2000×2280 body).
@@ -87,9 +91,10 @@ but gappy, so it can afford a short one.
 ## Build
 
 Isobar is plain C++17 built with **CMake**. The only third-party
-dependencies are [FLTK](https://www.fltk.org/) (GUI) and
-[RtAudio](https://caml.music.mcgill.ca/~gary/rtaudio/) (live audio); the
-DSP core is dependency-free.
+dependencies are [FLTK](https://www.fltk.org/) (GUI),
+[RtAudio](https://caml.music.mcgill.ca/~gary/rtaudio/) (live audio), and
+zlib (PNG compression in the core — present by default on macOS, and
+pulled in by the Linux/Windows packages below).
 
 ```sh
 cmake -B build -S .
@@ -102,7 +107,7 @@ Install the dependencies first:
 | OS | Command |
 |---|---|
 | macOS | `brew install fltk rtaudio cmake` |
-| Debian/Ubuntu | `sudo apt install libfltk1.3-dev librtaudio-dev cmake` |
+| Debian/Ubuntu | `sudo apt install libfltk1.3-dev librtaudio-dev zlib1g-dev cmake` |
 | Windows | vcpkg: `fltk` and `rtaudio`, with `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake` (MSVC) |
 
 ### Run
@@ -124,8 +129,9 @@ notarized).
 ## Project layout
 
 ```
-core/   Dependency-free C++17 DSP: FM demod, sync, .syn, FFT, tone detect,
-        live scan, resample, BMP, palette. See core/README.md.
+core/   C++17 DSP core: FM demod, sync, .syn, FFT, tone detect,
+        live scan, resample, BMP/PNG, palette. Only external dependency:
+        zlib (PNG compression). See core/README.md.
 cli/    isobar-decode (the decoder CLI) + the headless test suite.
 gui/    FLTK GUI: main window, scope, dialogs, RtAudio capture.
 docs/   Functional specification (derived from reverse engineering) + plans.

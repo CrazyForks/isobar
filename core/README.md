@@ -4,6 +4,8 @@ Framework-agnostic C++17 WEFAX decoder core, written fresh from the
 functional specification in `../docs/01-program-analysis.md` (sections 3 and 4).
 No code or tap tables were taken from the original binary; all FIR taps are
 re-derived with textbook windowed-sinc design (`filters.cpp`).
+The one external dependency is **zlib** (`pngfile.*`); everything else
+is self-contained.
 
 - `filters.*` — Hann-windowed-sinc FIR design (lowpass/bandpass/Hilbert)
   + streaming convolution.
@@ -118,8 +120,16 @@ re-derived with textbook windowed-sinc design (`filters.cpp`).
   4:3 on load and its mode byte coerced 1→3, like the original (fixed
   2026-08-06, from the Ghidra re-verification). Used by the CLI, the GUI
   Save, and auto-save.
-- `bmpfile.*` — BMP writer for the Form6 image-export path (and the
-  auto-save `.bmp` format option); matches the original's BMP layout.
+- `bmpfile.*` — BMP I/O for the Form6 image-export path, the auto-save
+  `.bmp` format option, and image input (Load data): writes 24-bit,
+  reads uncompressed 24/32-bit (either row order).
+- `pngfile.*` — PNG I/O on zlib (the core's one external dependency):
+  hand-rolled container (chunks, CRC, scanline filters) over zlib
+  `compress2`/`uncompress`. Writes 8-bit grayscale (the auto-save
+  `.png` format; level 9, small archival files) or RGB (manual export
+  with a color palette); reads 8-bit gray/RGB/RGBA, reduced to luma,
+  for image input (Load data). Palette/16-bit/interlaced files are
+  refused with a clear message.
 - `palette.*` — the 4 palette modes (monotone / an unnamed blue→red
   ramp, not selectable in the UI / "blue ray" / "color temp") + invert,
   applied at render time (Form5 color processing).
