@@ -13,6 +13,7 @@
 #include "../core/syncscan.h"
 #include "../core/synfile.h"
 
+#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <cstdlib>
@@ -71,10 +72,17 @@ int main(int argc, char **argv)
                 total ? 100.0 * img.lines_locked / total : 0.0, img.relocks);
 
         /* output format picked by extension: .syn -> KG-FAX compatible,
-         * anything else -> PGM for eyeballing */
+         * anything else -> PGM for eyeballing. Case-insensitive: ".SYN"
+         * comes off Windows and from some file managers, and silently
+         * writing a PGM under that name is the wrong answer. */
         std::string out = out_path;
-        bool want_syn = out.size() >= 4 &&
-                        out.compare(out.size() - 4, 4, ".syn") == 0;
+        bool want_syn = false;
+        if (out.size() >= 4) {
+            std::string ext = out.substr(out.size() - 4);
+            for (size_t i = 0; i < ext.size(); i++)
+                ext[i] = (char)tolower((unsigned char)ext[i]);
+            want_syn = ext == ".syn";
+        }
         if (want_syn) {
             syn_write(out, img);
         } else {

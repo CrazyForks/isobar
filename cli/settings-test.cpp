@@ -80,6 +80,34 @@ int main()
     if (settings_read(missing.c_str(), d))
         return fail("missing file reported as read");
 
+    /* An out-of-range integer must fall back, not WRAP into a plausible
+     * one. `(int)strtol(...)` turned 5000000000 into 705032704 - which
+     * then gets clamped downstream and looks like a deliberate setting,
+     * so a typo'd or corrupted ini mis-tuned the decoder in silence
+     * (audit 2026-08-09). Written as a raw ini so the value never passes
+     * through settings_write's own formatting. */
+    {
+        std::string bad = tmpdir + "/isobar-settings-range.ini";
+        {
+            std::ofstream f(bad.c_str());
+            f << "[Sync]\n"
+              << "MaxJump=5000000000\n"          /* > INT_MAX */
+              << "ReleaseAfter=-99999999999\n"   /* < INT_MIN */
+              << "LockAfter=7\n";                /* in range: must be kept */
+        }
+        KgSettings r;
+        settings_defaults(r);
+        if (!settings_read(bad.c_str(), r))
+            return fail("range ini not read");
+        if (r.max_jump != 20)
+            return fail("out-of-range MaxJump did not fall back to default");
+        if (r.release_after != 10)
+            return fail("out-of-range ReleaseAfter did not fall back");
+        if (r.lock_after != 7)
+            return fail("in-range LockAfter was not kept");
+        fs::remove(bad);
+    }
+
     /* The defaults are the ORIGINAL program's, lifted from the
      * TIniFile::ReadInteger literals in its ini loader (docs/01 sec. 6).
      * They are not ours to tidy, so pin every one of them.

@@ -454,6 +454,44 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.7.0 — PNG, pulse-free stations, and the second audit
+  (S36–S38):** two capabilities and a hardening pass. **PNG** joins
+  `.syn`/`.bmp` on both sides: grayscale out for auto-save (the small
+  archival format), color out when a palette is applied, and BMP/PNG
+  *in* as image sources next to WAV/SYN — a hand-rolled container over
+  zlib, which becomes the core's one external dependency. **Stations
+  that send no per-line sync at all** now decode: VMW (Wiluna) is
+  standard 120 LPM WEFAX with WMO phasing but a bare picture, so the
+  phase is acquired from the white phasing pulse and then HELD, at a
+  line rate least-squares-fitted to the preamble (the receiver's 12 kHz
+  stream is really ~12000.96 Hz — held at the nominal 4000 samples the
+  phase walks 154 px across one chart), with dropouts followed off the
+  picture's own content since nothing else can see them (DEVIATIONS #19,
+  sixth fixture `vmw-phasing-12k.wav`). Two capabilities — hence a minor
+  bump.
+  Then a second independent audit (S38) of the whole project. Its one
+  real finding was in the new PNG reader: the scanline length was
+  computed in `unsigned long`, which is 32 bits on MSVC and 64 on
+  macOS/Linux, so a ~1 KB file declaring 100000×42950 wrapped to a
+  75,654-byte buffer and then wrote 4.3 GB through it — Windows only,
+  and now bounded in 64-bit before anything is allocated. The reader
+  also never checked the chunk CRCs it was skipping past, which is the
+  one thing making PNG worth calling archival, so critical chunks are
+  now verified before their contents are used. The audit's other theme
+  was **duplication**: `live.cpp` was a hand-maintained twin of
+  `syncscan.cpp` (70% of every duplicated block in the project), which
+  had already cost two same-day bugs in S37. The moving-average step,
+  the pulse-run detector and both fallback searches are now single
+  copies in `syncscan.h` called by both paths, and the GUI's print
+  renderer turned out to be the export renderer at scale 1 — about 200
+  lines of parallel algorithm removed with all eight recordings
+  decoding byte-identical. The export/print render moved to
+  `core/render.*` so it could finally be tested headlessly (`render-test`
+  pins the 2280-line print ruler that once printed a partial reception
+  ~2× stretched). ctest 21 → **22**. Also: out-of-range ini integers now
+  fall back instead of wrapping into a plausible-looking setting,
+  `syn_write` verifies line width rather than trusting it, and
+  `isobar-decode` recognises `.SYN` as well as `.syn`.
   **Released v1.6.0 — the extendable receive buffer (S35):** the user
   recorded XSG (Guangzhou), whose charts run ~2755 lines — past the
   original's fixed 1500×2280 buffer, which Isobar clamped by dropping

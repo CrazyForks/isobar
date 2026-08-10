@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(isobar
-    VERSION 1.6.0
+    VERSION 1.7.0
     LANGUAGES CXX)
 
 # Expose the version to the source as ISOBAR_VERSION (used in the Details
@@ -175,6 +175,7 @@ add_library(isobar_core STATIC
     core/resample.cpp     core/resample.h
     core/bmpfile.cpp      core/bmpfile.h
     core/pngfile.cpp      core/pngfile.h
+    core/render.cpp       core/render.h
     core/palette.cpp      core/palette.h)
 target_include_directories(isobar_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -361,6 +362,7 @@ add_isobar_test(synfile-test)
 add_isobar_test(pngfile-test)
 add_isobar_test(bmpfile-test)
 add_isobar_test(palette-test)
+add_isobar_test(render-test)
 add_isobar_test(demod-test)
 add_isobar_test(phase-lock-test)
 

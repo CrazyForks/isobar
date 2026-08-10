@@ -24,7 +24,7 @@ and the implementation plans.
 
 ## Status
 
-Phase: **working software — v1.6.0 released**. Milestone status lives in
+Phase: **working software — v1.7.0 released**. Milestone status lives in
 `../ROADMAP.md`; day-to-day state in `../SESSION-LOG.md` (private — not
 published; see "What gets published" below).
 

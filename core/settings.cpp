@@ -3,6 +3,7 @@
 
 #include "settings.h"
 
+#include <cerrno>
 #include <climits>
 #include <fstream>
 #include <sstream>
@@ -242,11 +243,22 @@ static std::string trim(const std::string &s)
     return s.substr(a, b - a + 1);
 }
 
+/* An out-of-range value takes the fallback rather than wrapping into one.
+ * `(int)strtol(...)` turned "5000000000" into 705032704 - a number that
+ * looks like a deliberate setting and is not one; every value here then
+ * gets clamped to its own sane range downstream, so the nonsense survived
+ * silently. ERANGE covers overflow of `long` itself, the INT bounds cover
+ * the 64-bit-long platforms where strtol succeeds and the cast is what
+ * loses it. */
 static int to_int(const std::string &v, int fallback)
 {
     char *end = 0;
+    errno = 0;
     long n = strtol(v.c_str(), &end, 10);
-    return (end && *end == '\0') ? (int)n : fallback;
+    if (!end || *end != '\0' || errno == ERANGE ||
+        n < (long)INT_MIN || n > (long)INT_MAX)
+        return fallback;
+    return (int)n;
 }
 
 /* Walk an ini, handing each section/key/value to `assign`. Both schemas

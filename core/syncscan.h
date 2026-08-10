@@ -129,6 +129,67 @@ SyncParams sync_default_params();
  * everything downstream are unchanged. */
 inline int sync_dark_floor(const SyncParams &p) { return p.dark_th / 3; }
 
+/* ---- Front end, shared by scan_lines and LiveScan ----
+ *
+ * The batch scanner walks a finished buffer and the live one is fed a
+ * sample at a time, but the arithmetic below has to be IDENTICAL between
+ * them or the two paths decode the same audio differently. It was written
+ * out twice; these are the single copies. */
+
+/* One sample of the 8-sample moving average every detector here runs on.
+ * `acc` is the caller's running sum and `old` the sample 8 back (unused
+ * while i < 8). The ramp-up divisor - fewer than 8 samples averaged over
+ * the first 8 - is the fiddly part, and the reason this is a function. */
+inline int sync_ma_step(long &acc, size_t i, uint8_t cur, uint8_t old)
+{
+    acc += cur;
+    if (i >= 8)
+        acc -= old;
+    return (int)(acc / (i >= 7 ? 8 : (long)i + 1));
+}
+
+/* Incremental collector for the runs both detectors look for: a stretch of
+ * samples on one side of a threshold whose length is a plausible sync-pulse
+ * width (docs/01 sec. 3.2(7)). Polarity and reference point are the
+ * caller's:
+ *   sync pulse  - DARK run, position published at its START
+ *   WMO phasing - BRIGHT run, position published at its END
+ *                 (DEVIATIONS.md #19; SYNC_INV_OFFSET then carries it to
+ *                 the line's first pixel)
+ * Feed every sample in order; step() answers true on the sample that ENDS
+ * a qualifying run. */
+struct SyncRuns {
+    long start;      /* first sample of the current run, -1 = not in one */
+
+    void reset() { start = -1; }
+
+    /* `hit` = this sample is on the run's side of the threshold. On a true
+     * return *pos is the published position and *mean the run's mean
+     * brightness - what tells a sync pulse from picture content. */
+    bool step(const std::vector<int> &sm, size_t i, bool hit,
+              const SyncParams &p, bool publish_end, long *pos, int *mean)
+    {
+        if (hit) {
+            if (start < 0)
+                start = (long)i;
+            return false;
+        }
+        if (start < 0)
+            return false;
+        long from = start;
+        start = -1;
+        long len = (long)i - from;
+        if (len < p.min_pulse || len > p.max_pulse)
+            return false;
+        long s = 0;
+        for (long k = 0; k < len; k++)
+            s += sm[(size_t)(from + k)];
+        *pos = publish_end ? (long)i : from;
+        *mean = (int)(s / len);
+        return true;
+    }
+};
+
 /* ---- WMO inverted phasing (DEVIATIONS.md #19) ----
  *
  * The machinery above knows one sync shape: the JMH-style black pulse in a
@@ -779,6 +840,106 @@ inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
     if (dp <= p.search_win || dp >= LINE - p.search_win)
         return -1;
     return grid + here;
+}
+
+/* ---- The two fallback searches, shared by scan_lines and LiveScan ----
+ *
+ * Both are pure functions of the smoothed video and a window, so the batch
+ * and streaming paths call the very same code (they each held a copy until
+ * these were shared). The callers differ only in how they pick [lo, hi]:
+ * the whole line until the first lock of the stream, +-fallback_win/2
+ * around the predicted edge afterwards. */
+
+/* Our own second-chance search: the darkest position in [lo, hi], valid
+ * when it is dark (dark_th) and dips at least fb_thresh below the window
+ * mean. Deliberately NOT the original's test - that one slides a boxcar
+ * over the binarised video and accepts the minimum MEAN when it falls
+ * below SyncThre (docs/01 sec. 3.2(8), and sync_fallback_edge below is
+ * it). Ours is a dip depth relative to the local mean, which is why
+ * fb_thresh does not take SyncThre's value (DEVIATIONS.md #16). Tried
+ * only where the ported tracker declines. */
+inline long sync_fallback_search(const std::vector<int> &sm, long lo, long hi,
+                                 const SyncParams &p)
+{
+    long n = (long)sm.size();
+    if (lo < 0) lo = 0;
+    if (hi >= n) hi = n - 1;
+    if (lo >= hi)
+        return -1;
+
+    long best = lo;
+    long sum = 0;
+    for (long i = lo; i <= hi; i++) {
+        sum += sm[(size_t)i];
+        if (sm[(size_t)i] < sm[(size_t)best])
+            best = i;
+    }
+    long mean = sum / (hi - lo + 1);
+    if (sm[(size_t)best] < p.dark_th && mean - sm[(size_t)best] >= p.fb_thresh)
+        return best;
+    return -1;
+}
+
+/* The original's fallback tracker, docs/01 sec. 3.2(8), in OUR reference
+ * convention. It slides a boxcar of fallback_win samples over the
+ * binarised video and keeps the position with the minimum mean, but only
+ * where the samples just outside the window are bright - i.e. the window
+ * is a dark run with a bright edge, not merely a dark patch. Valid when
+ * that minimum mean is below fb_mean, an absolute bound (SyncThre), and
+ * when the move from the previous position is within search_win (MaxJump)
+ * or is a wrap-around the long way.
+ *
+ * One deliberate departure: the original gates on the samples AFTER the
+ * window and publishes the window's start, so its fallback anchors the
+ * dark->bright edge while its own shape check anchors the bright pulse -
+ * two reference points a whole fallback_win apart, which its own jump
+ * guard then rejects (docs/01 sec. 3.2(8) "pick one reference point").
+ * We gate on the samples BEFORE the window and publish its start, so the
+ * raw position is the bright->dark edge - the same raw reference our
+ * shape check starts from; sync_anchor() then refines both to the pulse's
+ * darkest-window centre, so the phase is published at one consistent
+ * reference. Same mechanism, one consistent reference. */
+inline long sync_fallback_edge(const std::vector<int> &sm, long lo, long hi,
+                               const SyncParams &p, long prev,
+                               bool ever_locked)
+{
+    /* hard-coded in the original with no ini key (docs/01 sec. 3.2(8)) */
+    const int FB_GATE = 8;          /* dword_4F25E4 */
+    const int FB_GATE_LEVEL = 128;  /* dword_4F25E8 */
+    const long LINE = 4000;
+
+    long n = (long)sm.size();
+    int win = p.fallback_win > 0 ? p.fallback_win : 160;
+    if (lo < FB_GATE) lo = FB_GATE;
+    if (hi > n - win) hi = n - win;
+    if (lo > hi)
+        return -1;
+
+    long best = -1;
+    int best_mean = 256;
+    for (long q = lo; q <= hi; q++) {
+        int gate = 0;
+        for (int i = 1; i <= FB_GATE; i++)
+            gate += sm[(size_t)(q - i)] >= p.dark_th ? 255 : 0;
+        if (gate / FB_GATE <= FB_GATE_LEVEL)
+            continue;            /* no bright->dark edge here */
+        int mean = 0;
+        for (int i = 0; i < win; i++)
+            mean += sm[(size_t)(q + i)] >= p.dark_th ? 255 : 0;
+        mean /= win;
+        if (mean < best_mean) {
+            best_mean = mean;
+            best = q;
+        }
+    }
+    if (best < 0 || best_mean >= p.fb_mean)
+        return -1;
+    if (ever_locked) {
+        long d = best - prev < 0 ? prev - best : best - prev;
+        if (d > p.search_win && d < LINE - p.search_win)
+            return -1;           /* jumped further than MaxJump */
+    }
+    return best;
 }
 
 /* Move the line phase toward a fallback result, rate-limited.
