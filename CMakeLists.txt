@@ -353,6 +353,7 @@ add_isobar_test(phasing-test)
 add_isobar_test(slew-test)
 add_isobar_test(satellite-test)
 add_isobar_test(reacq-test)
+add_isobar_test(invphasing-test)
 
 # Self-contained synthetic/core tests (no WAV needed; the helper's
 # source-root working directory costs nothing).

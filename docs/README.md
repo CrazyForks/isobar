@@ -58,7 +58,7 @@ released, CI green on macOS/Linux/Windows, Intel and ARM; the golden-reference
 comparison and the gappy-source `LockAfter` change stay open (`../ROADMAP.md`). **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system
 is **CMake** (`cmake -B build && cmake --build build && ctest --test-dir build`);
-there are five committed test fixtures, each covering something the others
+there are six committed test fixtures, each covering something the others
 cannot. `jmh-sample-short.wav` is a 30 s excerpt (44.1 kHz stereo Int16) of a
 strong signal — the full 9.6 min recording exists locally but is gitignored at
 97 MB, and tests auto-detect whichever is present. `jmh-offair-12k.wav` is 60 s
@@ -84,6 +84,13 @@ anything tested it (`satellite-test`), and it is also the fixture
 `reacq-test` splices to check the decoder can abandon a phase that has gone
 wrong — the hard case, because cloud gives a whole-line search plenty of
 dark rivals to the real pulse.
+`vmw-phasing-12k.wav` is 62 s at 12 kHz of a VMW (Wiluna) reception (added
+2026-08-09): the only fixture from a station that sends **no per-line sync
+at all** — standard WMO phasing for 30 s before each chart, then nothing in
+the picture. Everything the decoder does there it has to do without a
+reference: acquire from the inverted (white-in-black) phasing, hold the
+phase at the line rate fitted to those pulses, and follow a stream dropout
+off the picture's own content (`invphasing-test`).
 
 ## How the next contributor should use this
 
@@ -110,9 +117,10 @@ copyrighted expression out of the public repo. The rule:
 references and addresses stripped — `01-program-analysis.md` is now spec, not
 a code dump), `CMakeLists.txt` + `cmake/` (build system), `assets/` (icons),
 `macos/` (Info.plist template), `tools/` (icon-gen + DFM-extract scripts),
-the five committed test fixtures (`jmh-sample-short.wav`,
+the six committed test fixtures (`jmh-sample-short.wav`,
 `jmh-offair-12k.wav`, `jmh-slew-12k.wav`, `jmh-phasing-16k.wav`,
-`jmh-himawari-12k.wav` — short excerpts of off-air receptions, each kept
+`jmh-himawari-12k.wav`, `vmw-phasing-12k.wav` — short excerpts of off-air
+receptions, each kept
 small enough that every clone and CI checkout can afford it; the full
 recordings they come from stay local and gitignored), `README.md`,
 `PORTING.md`, `DEVIATIONS.md`, `LICENSE`, `NOTICE`, `ROADMAP.md`, and

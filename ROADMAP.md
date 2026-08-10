@@ -167,6 +167,29 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   XSG off-air decodes (FYCI 2755 lines, ASPN 2753, lock 86-91%)
   confirmed the core pipeline handles the length; GUI live path to be
   verified on the next XSG schedule.
+- ✅ **WMO inverted-phasing stations (VMW Wiluna) decode** (2026-08-09,
+  DEVIATIONS #19): VMW sends standard white-pulse-in-black phasing but
+  no per-line sync in the picture, so the JMH-style detector never
+  locked and the fallback shredded the chart (133 false corrections on a
+  646 s off-air recording). The port acquires from the inverted phasing
+  (white-pulse chain, dark-line gated, anchor at the pulse's leading
+  edge so the line's seam falls in the chart's blank margin), then
+  holds the phase through the picture **at the line period fitted to the
+  preamble pulses** — 3999.68 samples here, the receiver's clock error;
+  held at the nominal 4000 the chart came out sheared by 154 px, which
+  is what the first cut of this feature still did. Re-anchoring needs 8
+  black lines in a row (a chart's own dark bands are 2 and 4, and each
+  stepped the image sideways), and a 20-line-confirmed escape hands the
+  frequency back to a JMH-style station. Stream dropouts — this
+  recording loses 60-80 ms of audio three times, invisible to a decoder
+  with no per-line pulse — are followed off the picture's own content
+  (`sync_content_step`, ink-gated line-to-line correlation with a
+  one-line lookahead). Core + live, byte-identical; `invphasing-test`
+  (fixture `vmw-phasing-12k.wav`) covers the hold rate, the re-anchor
+  gate both ways, and a spliced-out dropout. The full recording now
+  decodes as one whole chart: masthead, both map panels, legend and
+  time-zone box all square, the panel border dark on 100% of its rows
+  (24% before) and straight through all three dropouts.
 
 ## M6 — Validation & release 🔶
 - 🔶 Golden-reference comparison against the original — **kept open**.
@@ -294,7 +317,15 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
      S28's per-line phase wobble — and neither had a test until now.
      Built against each of those commits, `satellite-test` reports 58 /
      77 / 120 of 120 lines locked, so it fails loudly on either
-     regression. S29 also added `reacq-test`, which needs no fixture of its
+     regression. **S37 added a sixth**, `vmw-phasing-12k.wav` (1.4 MB, 62 s
+     at 12 kHz of a VMW/Wiluna reception): the only fixture from a station
+     that sends no per-line sync at all — WMO phasing before the chart,
+     nothing in the picture — so the only one that can test acquiring from
+     inverted phasing, holding the phase at a rate measured off the
+     preamble, and following a stream dropout from the picture's own
+     content (`invphasing-test`, which also injects dark bands and splices
+     out a dropout of its own).
+     S29 also added `reacq-test`, which needs no fixture of its
      own: it splices the demodulated video (dropping N samples mid-decode,
      as a networked SDR's dropped buffer does) and requires the tracker to
      re-phase. That closed the last open sync item — re-acquisition escapes

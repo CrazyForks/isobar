@@ -106,6 +106,12 @@ private:
     std::deque<int> edge_dark;  /* each one's run-mean brightness;
                                    kept in lockstep with `edges`   */
     long run_start;             /* dark-run start, -1 = not in run */
+    /* WMO inverted phasing (DEVIATIONS.md #19): white-pulse candidates,
+       positions at each run's END (SYNC_INV_OFFSET carries it to the
+       line start, which is the pulse's leading edge) */
+    std::deque<long> inv_edges;
+    std::deque<int> inv_bright; /* kept in lockstep with inv_edges */
+    long inv_run_start;         /* bright-run start, -1 = not in run */
 
     /* line grid + phase (docs/01 sec. 3.2): line n covers samples
      * [n*4000, (n+1)*4000), emitted rotated by phi; tracking only
@@ -123,6 +129,14 @@ private:
                             re-enters on the same line while it waits for
                             samples, and the count is per line */
     long lock_from;      /* smallest edge position not rejected for lock */
+    bool inv_mode;       /* holding a WMO-phasing phase (DEVIATIONS #19) */
+    long inv_lock_from;  /* smallest inv-edge position not rejected      */
+    long esc_prev;       /* last full-window escape chain's phase        */
+    int esc_run;         /* consecutive lines agreeing on it             */
+    int inv_dark_run;    /* consecutive black-dominant lines             */
+    SyncInvDrift inv_drift;   /* line period fitted to the preamble      */
+    double inv_period;   /* samples per line while coasting (DEV #19)    */
+    double inv_phase;    /* exact coasting phase (fractional)            */
 
     std::atomic<bool> track;    /* Sync button, written by UI thread  */
     bool track_applied;         /* last state acted on (audio thread) */
@@ -132,7 +146,10 @@ private:
     std::atomic<bool> fin_done;    /* ... and performed by feed()      */
 
     void pump(void (*line_cb)(const uint8_t *, int, void *), void *ud);
-    long try_lock(long grid);   /* >=0 edge / -1 wait / -2 no chain  */
+    /* >=0 edge / -1 wait / -2 no chain; full_window ignores the
+     * ever_locked neighbourhood rule (the inv_mode escape's far search) */
+    long try_lock(long grid, bool full_window = false);
+    long try_inv_lock(long grid);   /* same, for WMO phasing pulses  */
     long fallback(long lo, long hi) const;
     long fallback_edge(long lo, long hi, long prev) const;
     void emit(void (*line_cb)(const uint8_t *, int, void *), void *ud,

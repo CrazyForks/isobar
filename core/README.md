@@ -85,6 +85,25 @@ is self-contained.
   NOTE the original's names for those two counters are the other way
   round from how they read: `LReSycn` releases, `RReSycn` locks. The port
   had them swapped until v1.2.0.
+  A separate **inverted-phasing path** (DEVIATIONS #19) covers WMO-style
+  stations whose picture carries no per-line pulse (VMW): a white-pulse
+  chain on black-dominant lines acquires the phase before the stream's
+  first lock (`find_inv_edges`/`find_inv_lock`, `sync_line_dark`,
+  `sync_bright_floor`), anchored at the pulse's leading edge
+  (`SYNC_INV_OFFSET`, chosen so the line's seam falls off the page); inv_mode then holds the phase — no fallback, no
+  release — at the line period measured off the preamble
+  (`SyncInvDrift`, least squares: the nominal 4000 samples is the
+  receiver's clock error away from the truth and sheared the chart),
+  following a stream dropout off the picture's own content
+  (`sync_content_step` — line-to-line correlation, ink-gated, with a
+  one-line lookahead; nothing else here can see a dropout on a station
+  with no per-line pulse), re-anchoring on each chart's preamble but
+  only after
+  `SYNC_PHASING_CONFIRM` black lines in a row, and a black-pulse
+  chain confirming for `SYNC_ESC_CONFIRM` lines (never on dark lines)
+  takes the decoder back out to normal tracking when a JMH-style
+  station appears. The batch and live implementations stay byte-identical
+  (`invphasing-test`, fixture `vmw-phasing-12k.wav`).
 - `fft.*` — 4096-point radix-2 FFT + Hann window, magnitudes in dBFS;
   used by the GUI spectrum scope (spec section 3.3).
 - `settings.*` — settings in the original's structure (spec section 6),

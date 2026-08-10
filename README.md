@@ -52,6 +52,10 @@ To build from source instead, see [Build](#build).
 - **Decodes WEFAX** (WMO-No. 386 Part III §5): 1500/2300 Hz FM sub-carrier
   about 1900 Hz, 60 or 120 rpm, IOC 576. IOC-selection (300 Hz) / stop
   (450 Hz) tone detection arms and disarms capture automatically.
+- **Stations without per-line sync** (WMO phasing only, e.g. VMW Wiluna):
+  locks from the phasing preamble, then holds the phase through the chart
+  at the line rate measured off that preamble, following stream dropouts
+  from the picture's own content.
 - **Live reception** from any sound input, or **offline decode** from a WAV
   recording. Spectrum scope + waterfall shown live during reception.
 - **Image tools**: zoom/pan, vertical rotate toggle, XY flip, 4 color
@@ -99,7 +103,7 @@ pulled in by the Linux/Windows packages below).
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 18 headless tests
+ctest --test-dir build        # runs the 21 headless tests
 ```
 
 Install the dependencies first:
@@ -152,6 +156,9 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = validation & release, largely
 done — two validation items still open).
+Stations that send no per-line sync — WMO phasing only, VMW Wiluna being
+the verified case — decode as well, on a phase held from the preamble
+rather than tracked (`DEVIATIONS.md` #19).
 Reception is not limited to the original's 2280-line buffer: long charts
 (e.g. XSG's ~2755-line broadcasts) are captured in full up to 4560 lines,
 while `.syn` saves stay KG-FAX-compatible (2280 lines max).

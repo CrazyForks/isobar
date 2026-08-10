@@ -23,6 +23,17 @@ void LiveScan::reset()
     edges.clear();
     edge_dark.clear();
     run_start = -1;
+    inv_edges.clear();
+    inv_bright.clear();
+    inv_run_start = -1;
+    inv_mode = false;
+    inv_lock_from = 0;
+    esc_prev = -1;
+    esc_run = 0;
+    inv_dark_run = 0;
+    inv_drift.reset();
+    inv_period = 4000.0;
+    inv_phase = 0.0;
     phi = 0;
     fb_dir = 0;
     fb_run = 0;
@@ -117,6 +128,25 @@ void LiveScan::feed(const uint8_t *data, size_t n,
             }
             run_start = -1;
         }
+
+        /* bright-run (WMO phasing pulse) candidate, DEVIATIONS.md #19:
+         * mirrors the dark-run check above with the polarity flipped;
+         * the position published is the run's END; SYNC_INV_OFFSET
+         * carries it to the line start (syncscan.cpp's twin) */
+        bool bright = m >= sync_bright_floor(p);
+        if (bright && inv_run_start < 0)
+            inv_run_start = (long)i;
+        else if (!bright && inv_run_start >= 0) {
+            long len = (long)i - inv_run_start;
+            if (len >= p.min_pulse && len <= p.max_pulse) {
+                inv_edges.push_back((long)i);
+                long s = 0;
+                for (long j = inv_run_start; j < (long)i; j++)
+                    s += sm[j];
+                inv_bright.push_back((int)(s / len));
+            }
+            inv_run_start = -1;
+        }
     }
     pump(line_cb, ud);
 
@@ -138,7 +168,7 @@ void LiveScan::feed(const uint8_t *data, size_t n,
  * -2 = no chain starts in this window (emit unlocked, retry next line).
  * An edge start is knowable only max_pulse samples after the fact, so
  * the horizon is buf.size() - max_pulse - 1. */
-long LiveScan::try_lock(long grid)
+long LiveScan::try_lock(long grid, bool full_window)
 {
     long finalized = (long)buf.size() - p.max_pulse - 1;
     int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
@@ -149,10 +179,13 @@ long LiveScan::try_lock(long grid)
      * fallback's neighbourhood around the expected phase, so an
      * all-dark preamble cannot make the phase run away. The search
      * widens again after widen_after lines with no lock at all, so a
-     * genuine change of transmission can still be followed. */
+     * genuine change of transmission can still be followed. The
+     * full_window flag skips the narrowing outright (the inv_mode
+     * escape's far search, which has its own confirmation rule). */
     const int widen_after = p.max_coast > 0 ? 3 * p.max_coast : 30;
     long lo = grid, hi = grid + LINE_SAMPLES - 1;
-    if (ever_locked && p.fallback_win > 0 && unlocked_for < widen_after) {
+    if (!full_window && ever_locked && p.fallback_win > 0 &&
+        unlocked_for < widen_after) {
         long expected = grid + phi;
         if (expected - p.fallback_win / 2 > lo)
             lo = expected - p.fallback_win / 2;
@@ -206,6 +239,75 @@ long LiveScan::try_lock(long grid)
     }
     /* ran out of edges: a chain start could still appear inside the
      * window unless the window is fully behind the horizon */
+    if (grid + LINE_SAMPLES > finalized)
+        return -1;
+    return -2;
+}
+
+/* Inverted (WMO phasing) lock acquisition, DEVIATIONS.md #19: streaming
+ * twin of syncscan.cpp's find_inv_lock, mirroring try_lock's structure
+ * (the two must stay byte-identical - the new fixture's live-vs-batch
+ * check in cli/invphasing-test.cpp). Same window rule as try_lock;
+ * differences: the chain start's line must be dark-dominant
+ * (sync_line_dark - aborts the search, as the batch version) and the run
+ * must pass the bright floor. */
+long LiveScan::try_inv_lock(long grid)
+{
+    long finalized = (long)buf.size() - p.max_pulse - 1;
+    int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
+
+    const int widen_after = p.max_coast > 0 ? 3 * p.max_coast : 30;
+    long lo = grid, hi = grid + LINE_SAMPLES - 1;
+    if (ever_locked && p.fallback_win > 0 && unlocked_for < widen_after) {
+        long expected = grid + phi;
+        if (expected - p.fallback_win / 2 > lo)
+            lo = expected - p.fallback_win / 2;
+        if (expected + p.fallback_win / 2 < hi)
+            hi = expected + p.fallback_win / 2;
+    }
+
+    for (size_t i = 0; i < inv_edges.size(); i++) {
+        if (inv_edges[i] < inv_lock_from)
+            continue;
+        if (inv_edges[i] >= grid + LINE_SAMPLES)
+            return -2;            /* chain start beyond this window */
+        if (inv_edges[i] < lo || inv_edges[i] > hi)
+            continue;             /* outside the allowed neighbourhood */
+        if (i < inv_bright.size() && inv_bright[i] < sync_bright_floor(p))
+            continue;             /* too pale to be a phasing pulse */
+        if (!sync_line_dark(sm, grid, p))
+            return -2;            /* not phasing: do not look further */
+        long cur = inv_edges[i];
+        int links = 0;
+        bool broken = false, waiting = false;
+        for (size_t j = i + 1; links < need; j++) {
+            if (j >= inv_edges.size()) {
+                if (cur + p.max_period > finalized)
+                    waiting = true;
+                else
+                    broken = true;
+                break;
+            }
+            long per = inv_edges[j] - cur;
+            if (per < p.min_period)
+                continue;            /* junk edge: skip */
+            if (per <= p.max_period) {
+                cur = inv_edges[j];
+                links++;
+                continue;
+            }
+            if (cur + p.max_period > finalized)
+                waiting = true;
+            else
+                broken = true;
+            break;
+        }
+        if (waiting)
+            return -1;
+        if (!broken && links >= need)
+            return inv_edges[i];
+        inv_lock_from = inv_edges[i] + 1;  /* start rejected permanently */
+    }
     if (grid + LINE_SAMPLES > finalized)
         return -1;
     return -2;
@@ -340,6 +442,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
             track_applied = tr;
             if (tr) {
                 locked = false;
+                inv_mode = false;
                 miss = 0;
                 since_shape = 0;
                 while (!edges.empty() && edges.front() < grid) {
@@ -347,6 +450,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     edge_dark.pop_front();
                 }
                 lock_from = grid;
+                while (!inv_edges.empty() && inv_edges.front() < grid) {
+                    inv_edges.pop_front();
+                    inv_bright.pop_front();
+                }
+                inv_lock_from = grid;
+                esc_prev = -1;
+                esc_run = 0;
             }
         }
 
@@ -361,6 +471,16 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     unlocked_for++;
                 else
                     unlocked_for = 0;
+                /* consecutive black-dominant lines, counted once per line
+                 * even though pump() may re-enter on this one waiting for
+                 * samples. The batch twin counts it inside the inv_mode
+                 * branch, which runs on exactly these lines. */
+                if (inv_mode) {
+                    if (sync_line_dark(sm, grid, p))
+                        inv_dark_run++;
+                    else
+                        inv_dark_run = 0;
+                }
             }
 
             if (!locked) {
@@ -384,6 +504,208 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     how = 0;
                 }
                 /* E == -2: no chain in this window -> fallback below */
+                if (how != 0 && !ever_locked) {
+                    /* WMO inverted phasing (DEVIATIONS.md #19): a chain
+                     * of white pulses on dark lines. The anchor is the
+                     * pulse's trailing edge plus SYNC_INV_OFFSET (i.e.
+                     * its leading edge).
+                     * Only before the first lock of the stream: once ANY
+                     * phase reference exists, the established convention
+                     * owns it (see the !locked branch in syncscan.cpp). */
+                    long IE = try_inv_lock(grid);
+                    if (IE == -1) {
+                        if (finishing)
+                            IE = -2;   /* end of stream: an incomplete
+                                        * chain is no chain, as batch */
+                        else
+                            return;    /* undecidable yet: wait */
+                    }
+                    if (IE >= 0) {
+                        phi = (IE + SYNC_INV_OFFSET - grid + LINE_SAMPLES)
+                              % LINE_SAMPLES;
+                        /* start measuring the line period here (batch
+                         * twin in syncscan.cpp) */
+                        inv_drift.reset();
+                        inv_drift.add(grid / LINE_SAMPLES,
+                                      IE + SYNC_INV_OFFSET);
+                        inv_period = 4000.0;
+                        inv_phase = (double)phi;
+                        inv_dark_run = SYNC_PHASING_CONFIRM;
+                        fb_dir = 0;
+                        fb_run = 0;
+                        manual_hold = false;
+                        last_shape = IE;
+                        if (ever_locked)
+                            relocks++;
+                        locked = true;
+                        inv_mode = true;
+                        unlocked_for = 0;
+                        ever_locked = true;
+                        miss = 0;
+                        since_shape = 0;
+                        how = 0;
+                    }
+                    /* IE == -2: no inverted chain either -> fallback */
+                }
+            } else if (inv_mode) {
+                /* Holding a phase acquired from WMO phasing
+                 * (DEVIATIONS.md #19): no fallback, no release - the
+                 * picture carries no pulse to track. */
+                long win = p.fallback_win > 0 ? p.fallback_win : 160;
+                long bracket = p.search_win + win / 2;
+                /* escape: a black-pulse chain means a JMH-style station
+                 * took over the frequency. Narrow first (its own phasing
+                 * will already have re-anchored us below); then the whole
+                 * line, but a far result must CONFIRM on the next line -
+                 * a real station's pulses chain at the same phase on
+                 * consecutive lines, picture content does not. Skipped
+                 * entirely on black-dominant lines (VMW's end-of-chart
+                 * band chains like a pulse). See the same branch in
+                 * syncscan.cpp (byte-identical). */
+                long E = -2;
+                bool dark = sync_line_dark(sm, grid, p);
+                if (!dark) {
+                E = try_lock(grid);
+                if (E == -1) {
+                    if (finishing)
+                        E = -2;   /* end of stream: an incomplete
+                                   * chain is no chain, as batch */
+                    else
+                        return;    /* undecidable yet: wait */
+                }
+                if (E == -2) {
+                    E = try_lock(grid, true);
+                    if (E == -1) {
+                        if (finishing)
+                            E = -2;
+                        else
+                            return;
+                    }
+                    if (E >= 0) {
+                        long f = (E - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                        bool same = false;
+                        if (esc_prev >= 0) {
+                            long d = f - esc_prev;
+                            if (d < 0) d = -d;
+                            if (d > LINE_SAMPLES / 2) d = LINE_SAMPLES - d;
+                            same = d <= p.search_win;
+                        }
+                        if (same)
+                            esc_run++;
+                        else {
+                            esc_prev = f;
+                            esc_run = 1;
+                        }
+                        if (esc_run < SYNC_ESC_CONFIRM)
+                            E = -2;         /* not proven yet */
+                    }
+                    /* no chain on this line: esc_prev/esc_run are kept -
+                     * see the same branch in syncscan.cpp */
+                }
+                }
+                if (E >= 0) {
+                    phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
+                          % LINE_SAMPLES;
+                    fb_dir = 0;
+                    fb_run = 0;
+                    manual_hold = false;
+                    last_shape = E;
+                    relocks++;
+                    locked = true;
+                    inv_mode = false;
+                    unlocked_for = 0;
+                    miss = 0;
+                    since_shape = 0;
+                    how = 0;
+                } else if (dark && inv_dark_run >= SYNC_PHASING_CONFIRM) {
+                    /* still (or again) phasing: re-anchor on this line's
+                     * pulse, so the next chart's preamble re-seats the
+                     * phase and keeps the period measurement going. The
+                     * run-length gate keeps a chart's own dark bands from
+                     * re-anchoring mid-picture (batch twin). */
+                    if (inv_dark_run == SYNC_PHASING_CONFIRM &&
+                        inv_drift.have && grid / LINE_SAMPLES - inv_drift.first
+                                          > SYNC_DRIFT_MIN_PTS)
+                        inv_drift.reset();   /* a NEW preamble */
+                    long prev_edge = grid - LINE_SAMPLES + phi;
+                    /* bracket the RAW edges, SYNC_INV_OFFSET away from the
+                     * anchor the prediction is in (batch twin) */
+                    long ecen = expected - SYNC_INV_OFFSET;
+                    while (!inv_edges.empty() &&
+                           inv_edges.front() < ecen - bracket) {
+                        inv_edges.pop_front();
+                        inv_bright.pop_front();
+                    }
+                    /* same finalization rule as the shape match below */
+                    if (!finishing &&
+                        (long)buf.size() <= ecen + bracket + p.max_pulse)
+                        return;    /* undecidable yet: wait */
+                    for (size_t k = 0;
+                         k < inv_edges.size() &&
+                         inv_edges[k] <= ecen + bracket; k++) {
+                        /* the anchor is the trailing edge plus the
+                         * offset, everywhere (SYNC_INV_OFFSET) */
+                        long A = inv_edges[k] + SYNC_INV_OFFSET;
+                        if (A < expected - p.search_win ||
+                            A > expected + p.search_win)
+                            continue;
+                        /* prev_edge carries the offset through phi, so
+                         * the period is judged anchor-to-anchor */
+                        long per = A - prev_edge;
+                        if (per >= p.min_period && per <= p.max_period) {
+                            phi = (A - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                            /* every preamble anchor feeds the period fit
+                             * (batch twin) */
+                            inv_drift.add(grid / LINE_SAMPLES, A);
+                            if (inv_drift.n >= (double)SYNC_DRIFT_MIN_PTS)
+                                inv_period = inv_drift.period();
+                            inv_phase = (double)phi;
+                            fb_dir = 0;
+                            fb_run = 0;
+                            last_shape = inv_edges[k];
+                            miss = 0;
+                            since_shape = 0;
+                            how = 0;
+                        }
+                        break;
+                    }
+                }
+                if (how != 0) {
+                    /* The content step below needs one line of lookahead,
+                     * so wait for it BEFORE touching inv_phase - pump()
+                     * re-enters on this line, and a half-applied hold
+                     * would advance the phase twice. */
+                    bool have_next =
+                        (long)buf.size() >= grid + 2 * LINE_SAMPLES;
+                    if (!dark && !finishing && !have_next)
+                        return;
+                    /* hold the phase at the MEASURED line period, not at
+                     * the nominal 4000 (DEVIATIONS.md #19, batch twin) */
+                    inv_phase += inv_period - (double)LINE_SAMPLES;
+                    if (inv_phase < 0.0)
+                        inv_phase += (double)LINE_SAMPLES;
+                    else if (inv_phase >= (double)LINE_SAMPLES)
+                        inv_phase -= (double)LINE_SAMPLES;
+                    phi = (long)(inv_phase + 0.5) % LINE_SAMPLES;
+                    /* ... and follow a dropout off the picture's own
+                     * content (batch twin) */
+                    if (!dark) {
+                        long lag = sync_content_step(sm, grid, phi,
+                                                     have_next);
+                        if (lag != 0) {
+                            inv_phase += (double)lag;
+                            while (inv_phase < 0.0)
+                                inv_phase += (double)LINE_SAMPLES;
+                            while (inv_phase >= (double)LINE_SAMPLES)
+                                inv_phase -= (double)LINE_SAMPLES;
+                            phi = (long)(inv_phase + 0.5) % LINE_SAMPLES;
+                            relocks++;
+                        }
+                    }
+                    miss++;
+                    since_shape++;
+                    how = 2;
+                }
             } else {
                 /* shape match: candidate edge near the predicted edge;
                  * drop edges that fell behind the match window. The
@@ -426,9 +748,11 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 }
             }
 
-            if (how != 0) {
+            if (how != 0 && !inv_mode) {
                 /* fallback: full window until first lock, narrow
-                 * window after (docs/01 sec. 3.2(8)) */
+                 * window after (docs/01 sec. 3.2(8)). (Skipped in
+                 * inv_mode: a WMO-phasing picture has no pulse to
+                 * find - holding the phase is correct there.) */
                 long fb = -1;
                 bool snapped = false;
                 long flo = grid, fhi = grid + LINE_SAMPLES - 1;

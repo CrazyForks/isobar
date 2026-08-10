@@ -285,3 +285,97 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     color mode, unlike a `.syn` header. PNG input is limited to 8-bit
     non-interlaced grayscale/RGB/RGBA; BMP input to uncompressed
     24/32-bit. Unsupported variants fail with a clear error message.
+
+19. **WMO inverted phasing is acquired, and the phase is then HELD
+    through pulse-free pictures** (added 2026-08-09, user request: a
+    VMW/Wiluna off-air recording was undecodable). The port's sync
+    machinery was built around the JMH-style per-line black pulse in a
+    white signal, which JMH/JSC/XSG keep sending through the picture.
+    WMO-standard phasing is the inverse — a black signal with one white
+    pulse per line (IOC 576: 25 ms = 5%), sent ≥30 s before each chart —
+    and some stations, VMW being the known case, send **no per-line
+    pulse during the picture at all**. On such a broadcast the
+    black-pulse detector never locked (0.9% of lines on a 646 s VMW
+    recording) and the fallback then wandered the phase across picture
+    content (133 false corrections), shredding the chart into
+    mirrored-looking fragments.
+    The port now mirrors the normal acquisition with the polarity
+    flipped (`find_inv_edges` / `find_inv_lock` in `core/syncscan.cpp`,
+    twins in `core/live.cpp`): bright runs of sync-pulse width chain
+    across lines, gated to black-dominant lines (`sync_line_dark`) and a
+    white floor (`sync_bright_floor`), both in `core/syncscan.h`. The
+    anchor is the pulse's LEADING edge (`SYNC_INV_OFFSET` = −196 from the
+    trailing edge it publishes; the pulse is 196 samples, the WMO 25 ms).
+    Where the seam sits is a free choice here in a way it never is for a
+    station with per-line sync — that station's phase *is* its sync pulse,
+    while a WMO-phasing picture carries nothing — and the one thing it
+    must do is fall off the page. VMW's chart covers about two thirds of
+    the drum: anchoring where JMH anchors (+58; measured at +61 and +60
+    past the trailing edge on `jmh sample.wav` and `jmh-kiwi-testchart
+    .wav`, over 118 and 55 preamble lines) put the seam 21 px inside the
+    page and wrapped the masthead's first letter and the panel border to
+    the far right. The leading edge puts it 75 px into the blank margin,
+    and the chart lands whole with 78 px clear on the left and 425 on the
+    right.
+    After the lock, **inv_mode holds the phase**: no fallback, no
+    release — the picture carries nothing to track, so coasting is
+    exactly right; the next chart's phasing re-anchors through an
+    inverted shape match.
+
+    **The hold runs at the measured line period, not at 4000 samples.**
+    A station without per-line sync gives the decoder exactly one chance
+    to measure the line rate, and 4000 is not it: a KiwiSDR's 12 kHz
+    stream is really ~12000.96 Hz, which is 3999.68 samples per line
+    (least squares over 57 preamble pulses of the VMW recording, residual
+    max 1.7 samples). Held at 4000, the phase walked 0.32 samples per
+    line — 412 samples = 154 px of shear across one chart, with the
+    chart's own content cut at the seam and no vertical border straight
+    (best column dark on 24% of its rows). So the preamble anchors feed a
+    least-squares fit (`SyncInvDrift` in `core/syncscan.h`, shared by both
+    paths) and the coasting phase advances by the fitted period. On the
+    same recording the shear is gone: the panel border is dark on 100% of
+    its rows, residual drift 0.003 px/line. Stations WITH per-line sync
+    never showed this — their tracking absorbs the same clock error line
+    by line — which is why it survived until a no-sync station arrived.
+
+    **And a dropout is followed off the picture's own content.** A held
+    phase is only as good as the stream feeding it: a networked SDR drops
+    audio, and this recording loses 60-80 ms three times inside one chart
+    (lines 686, 911, 952 — no silence in the WAV, the samples are simply
+    gone). A station with per-line sync shrugs that off, `sync_step_lock`
+    re-locks on the line it happens; here nothing would ever notice, and
+    the chart's panel border walked 972 → 744 → 507 → 316 px across the
+    page. So `sync_content_step` correlates each picture line against the
+    previous one over ±800 samples (decimated by 4, refined at full rate)
+    and takes the lag when it is more than the drift model would ever
+    move, matches (0.35), beats no-move (0.10) and every other lag
+    (0.10), and the NEXT line agrees — the same lookahead `sync_step_lock`
+    uses. One extra gate does the real work: both lines must carry ink
+    (RMS 32 of the mean-removed profile). Without it two false steps in
+    the masthead band passed every correlation test and tore the Bureau's
+    logo in half; the measured table is in `core/syncscan.h`. Corrected,
+    the border runs straight down 500 lines at one column and the whole
+    chart — both map panels, legend, time-zone box — comes out whole.
+
+    Three guards keep it in its lane: acquisition only fires
+    before the stream's first lock (once any phase reference exists, the
+    established convention owns it — a JMH preamble is the same
+    white-pulse-in-black shape, and inv-locking it would throw away a
+    phase that was already right); a re-anchor mid-stream needs
+    `SYNC_PHASING_CONFIRM` = 8 consecutive black-dominant lines, since a
+    real preamble is at least 60 of them while a chart's own dark bands
+    are 2 and 4 lines on this recording — and each of those re-anchored
+    the phase by up to `search_win`, stepping the image sideways; and the
+    escape out of inv_mode (a JMH-style station taking over the
+    frequency) requires a black-pulse chain to confirm at one phase for
+    `SYNC_ESC_CONFIRM` = 20 lines and never fires on black-dominant
+    lines — VMW's end-of-chart ruler band chains and confirms exactly
+    like a sync pulse (measured false escapes 12 lines long, and one
+    396 px off). Live reception mirrors the batch path byte for byte
+    (`invphasing-test`, fixture `vmw-phasing-12k.wav`, which also injects
+    4- and 16-line dark bands to check the re-anchor gate both ways).
+    Note the
+    original's own shape check is itself a phasing-preamble detector
+    (#16), so this brings the port's acquisition closer to the
+    original's, with a different picture strategy: the original
+    fallback-tracks under its MaxJump rejection, we hold.

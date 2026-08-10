@@ -206,6 +206,83 @@ long fallback_edge(const std::vector<int> &sm, long lo, long hi,
 
 } /* namespace */
 
+namespace {
+
+/* Inverted (WMO phasing) edge collection, DEVIATIONS.md #19: mirror of
+ * find_sync_edges with the polarity flipped. A candidate is a BRIGHT run
+ * whose length is a plausible phasing pulse width; the published position
+ * is the run's END (first non-bright sample), not its start - one fixed
+ * reference for every caller, exactly as find_sync_edges publishes the
+ * dark run's start. SYNC_INV_OFFSET then carries it to the line's first
+ * pixel (which is the pulse's LEADING edge - see the constant).
+ * `bright_out` receives each run's mean brightness. */
+std::vector<long> find_inv_edges(const std::vector<int> &sm,
+                                 const SyncParams &p,
+                                 std::vector<int> *bright_out = nullptr)
+{
+    std::vector<long> edges;
+    long run_start = -1;
+    for (size_t i = 0; i < sm.size(); i++) {
+        bool bright = sm[i] >= sync_bright_floor(p);
+        if (bright && run_start < 0)
+            run_start = (long)i;
+        else if (!bright && run_start >= 0) {
+            long len = (long)i - run_start;
+            if (len >= p.min_pulse && len <= p.max_pulse) {
+                edges.push_back((long)i);
+                if (bright_out) {
+                    long s = 0;
+                    for (long k = run_start; k < (long)i; k++)
+                        s += sm[k];
+                    bright_out->push_back((int)(s / len));
+                }
+            }
+            run_start = -1;
+        }
+    }
+    return edges;
+}
+
+/* Inverted lock acquisition, DEVIATIONS.md #19: mirror of find_lock for
+ * the white phasing pulse. Same junk-tolerant chain of lock_hyst valid
+ * periods; differences: the chain start's line must be dark-dominant
+ * (sync_line_dark - phasing, not picture) and the run must be genuinely
+ * white (bright floor, the sync_dark_floor mirror). Returns inv_edges.size()
+ * if none. `grid` is the current line window, for the line-dark gate. */
+size_t find_inv_lock(const std::vector<long> &inv_edges,
+                     const std::vector<int> &inv_bright,
+                     size_t from, long lo, long hi, long win_end,
+                     const std::vector<int> &sm, long grid,
+                     const SyncParams &p)
+{
+    int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
+    for (size_t i = from; i + 1 < inv_edges.size(); i++) {
+        if (inv_edges[i] >= win_end)
+            break;              /* chain start beyond this line window */
+        if (inv_edges[i] < lo || inv_edges[i] > hi)
+            continue;           /* outside the allowed neighbourhood */
+        if (i < inv_bright.size() && inv_bright[i] < sync_bright_floor(p))
+            continue;           /* too pale to be a phasing pulse */
+        if (!sync_line_dark(sm, grid, p))
+            return inv_edges.size();   /* not phasing: do not look further */
+        long cur = inv_edges[i];
+        int links = 0;
+        for (size_t j = i + 1; j < inv_edges.size(); j++) {
+            long per = inv_edges[j] - cur;
+            if (per > p.max_period)
+                break;          /* chain broken: gap too big */
+            if (per < p.min_period)
+                continue;       /* junk edge: skip */
+            cur = inv_edges[j];
+            if (++links >= need)
+                return i;
+        }
+    }
+    return inv_edges.size();
+}
+
+} /* namespace */
+
 SyncParams sync_default_params()
 {
     SyncParams p;
@@ -243,6 +320,9 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
     std::vector<int> sm = moving_average(video);
     std::vector<int> edge_dark;
     std::vector<long> edges = find_sync_edges(sm, p, &edge_dark);
+    /* WMO inverted phasing (DEVIATIONS.md #19): white-pulse candidates */
+    std::vector<int> inv_bright;
+    std::vector<long> inv_edges = find_inv_edges(sm, p, &inv_bright);
 
     /* Line grid (docs/01 sec. 3.2): line n covers samples
      * [n*4000, (n+1)*4000), emitted rotated by phi so the sync edge
@@ -260,6 +340,16 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
     size_t ei = 0;            /* cursor into edges (match window)       */
     size_t lock_from = 0;     /* cursor into edges (lock acquisition)   */
     int unlocked_for = 0;     /* consecutive lines with no lock         */
+    bool inv_mode = false;    /* holding a WMO-phasing phase (DEV #19)  */
+    size_t inv_ei = 0;        /* cursor into inv_edges (match window)   */
+    size_t inv_lock_from = 0; /* cursor into inv_edges (acquisition)    */
+    long esc_prev = -1;       /* last full-window escape chain's phase  */
+    int esc_run = 0;          /* consecutive lines agreeing on it       */
+    int inv_dark_run = 0;     /* consecutive black-dominant lines       */
+    SyncInvDrift inv_drift;   /* line period fitted to the preamble     */
+    double inv_period = 4000.0;
+    double inv_phase = 0.0;   /* exact coasting phase (fractional)      */
+    inv_drift.reset();
 
     /* After this many consecutive unlocked lines, re-acquisition may
      * search a whole line again instead of only the neighbourhood of the
@@ -344,6 +434,236 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     ei = nl + 1;
                     lock_from = nl + 1;
                 }
+                if (how != 0 && !ever_locked) {
+                    /* WMO inverted phasing (DEVIATIONS.md #19): a chain
+                     * of white pulses on dark lines, in the same window.
+                     * The anchor is the pulse's trailing edge plus
+                     * SYNC_INV_OFFSET (i.e. its leading edge).
+                     * Only before the first lock of the stream: once ANY
+                     * phase reference exists, the established convention
+                     * owns it - a JMH-style preamble is the same white-
+                     * pulse-in-black shape, but its picture sync sits
+                     * elsewhere, and inv-locking it would throw away a
+                     * phase that was already right (phasing-test). */
+                    while (inv_lock_from < inv_edges.size() &&
+                           inv_edges[inv_lock_from] < grid)
+                        inv_lock_from++;
+                    size_t nil = find_inv_lock(inv_edges, inv_bright,
+                                               inv_lock_from, lo, hi,
+                                               grid + LINE_SAMPLES, sm,
+                                               grid, p);
+                    if (nil < inv_edges.size()) {
+                        long E = inv_edges[nil];
+                        phi = (E + SYNC_INV_OFFSET - grid + LINE_SAMPLES)
+                              % LINE_SAMPLES;
+                        /* start measuring the line period here: this is
+                         * the first anchor of the preamble that will be
+                         * coasted on (DEVIATIONS.md #19) */
+                        inv_drift.reset();
+                        inv_drift.add(grid / LINE_SAMPLES,
+                                      E + SYNC_INV_OFFSET);
+                        inv_period = 4000.0;
+                        inv_phase = (double)phi;
+                        inv_dark_run = SYNC_PHASING_CONFIRM;
+                        fb_dir = 0;
+                        fb_run = 0;
+                        last_shape = E;
+                        if (ever_locked)
+                            img.relocks++;
+                        locked = true;
+                        inv_mode = true;
+                        unlocked_for = 0;
+                        ever_locked = true;
+                        miss = 0;
+                        since_shape = 0;
+                        how = 0;
+                        inv_ei = nil + 1;
+                        inv_lock_from = nil + 1;
+                        esc_prev = -1;
+                        esc_run = 0;
+                    }
+                }
+            } else if (inv_mode) {
+                /* Holding a phase acquired from WMO phasing
+                 * (DEVIATIONS.md #19). The picture carries no pulse to
+                 * track, so there is no fallback and no release in this
+                 * mode - coasting is exactly right. Two things may still
+                 * move or take over the phase: */
+                long bracket = p.search_win +
+                               (p.fallback_win > 0 ? p.fallback_win : 160) / 2;
+                /* a black-pulse chain means a JMH-style station took over
+                 * the frequency. Searched narrow first (its own phasing
+                 * will already have re-anchored us below, so its picture
+                 * pulses land nearby); if nothing is there, the whole
+                 * line - JMH's picture sync sits ~260 samples from its
+                 * phasing anchor (measured on "jmh sample.wav"), far
+                 * outside the narrow window. A full-window search on every
+                 * line would re-expose picture content to false chain
+                 * locks, so the far result must CONFIRM: a real station's
+                 * pulses chain at the same phase on consecutive lines,
+                 * picture content does not (the sync_step_lock
+                 * philosophy). The takeover happens after
+                 * SYNC_ESC_CONFIRM agreeing lines (a tall chart feature
+                 * chains too - 12 lines measured - but not for long).
+                 * The whole escape is skipped on black-dominant lines: a
+                 * real takeover's picture lines are not dark, but VMW's
+                 * own end-of-chart band is - and its dotted ruler chains
+                 * and confirms exactly like a sync pulse (measured: a
+                 * false escape 396 px off at line ~1240 of the VMW
+                 * recording). */
+                /* black-dominant lines in a row: a phasing preamble is at
+                 * least 60 of them, a chart's dark band is a handful
+                 * (SYNC_PHASING_CONFIRM) */
+                bool dark = sync_line_dark(sm, grid, p);
+                if (dark)
+                    inv_dark_run++;
+                else
+                    inv_dark_run = 0;
+
+                size_t nl = edges.size();
+                if (!dark) {
+                while (lock_from < edges.size() && edges[lock_from] < grid)
+                    lock_from++;
+                long elo = grid, ehi = grid + LINE_SAMPLES - 1;
+                if (p.fallback_win > 0) {
+                    if (expected - p.fallback_win / 2 > elo)
+                        elo = expected - p.fallback_win / 2;
+                    if (expected + p.fallback_win / 2 < ehi)
+                        ehi = expected + p.fallback_win / 2;
+                }
+                nl = find_lock(edges, edge_dark, lock_from, elo, ehi,
+                               grid + LINE_SAMPLES, p);
+                if (nl == edges.size()) {
+                    nl = find_lock(edges, edge_dark, lock_from, grid,
+                                   grid + LINE_SAMPLES - 1,
+                                   grid + LINE_SAMPLES, p);
+                    if (nl < edges.size()) {
+                        long f = (edges[nl] - grid + LINE_SAMPLES)
+                                 % LINE_SAMPLES;
+                        bool same = false;
+                        if (esc_prev >= 0) {
+                            long d = f - esc_prev;
+                            if (d < 0) d = -d;
+                            if (d > LINE_SAMPLES / 2) d = LINE_SAMPLES - d;
+                            same = d <= p.search_win;
+                        }
+                        if (same)
+                            esc_run++;
+                        else {
+                            esc_prev = f;
+                            esc_run = 1;
+                        }
+                        if (esc_run < SYNC_ESC_CONFIRM)
+                            nl = edges.size();   /* not proven yet */
+                    }
+                    /* no chain on this line: esc_prev/esc_run are kept -
+                     * a pulse embedded in photo content is missed on some
+                     * lines, and resetting would never reach the count */
+                }
+                }
+                if (nl < edges.size()) {
+                    long E = edges[nl];
+                    phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
+                          % LINE_SAMPLES;
+                    fb_dir = 0;
+                    fb_run = 0;
+                    last_shape = E;
+                    img.relocks++;
+                    locked = true;
+                    inv_mode = false;
+                    unlocked_for = 0;
+                    miss = 0;
+                    since_shape = 0;
+                    how = 0;
+                    ei = nl + 1;
+                    lock_from = nl + 1;
+                } else if (dark && inv_dark_run >= SYNC_PHASING_CONFIRM) {
+                    /* still (or again) phasing: re-anchor on this line's
+                     * pulse, so the next chart's preamble re-seats the
+                     * phase and keeps the period measurement going. The
+                     * run-length gate is what keeps a chart's own dark
+                     * bands from re-anchoring mid-picture. */
+                    if (inv_dark_run == SYNC_PHASING_CONFIRM &&
+                        inv_drift.have && grid / LINE_SAMPLES - inv_drift.first
+                                          > SYNC_DRIFT_MIN_PTS)
+                        inv_drift.reset();   /* a NEW preamble: measure it
+                                              * on its own, keeping the
+                                              * estimate in hand until the
+                                              * fit is trustworthy again */
+                    long prev_edge = grid - LINE_SAMPLES + phi;
+                    /* bracket the RAW edges, which sit SYNC_INV_OFFSET away
+                     * from the anchor the prediction is in - the anchor
+                     * itself is tested below, as the shape match does */
+                    long ecen = expected - SYNC_INV_OFFSET;
+                    while (inv_ei < inv_edges.size() &&
+                           inv_edges[inv_ei] < ecen - bracket)
+                        inv_ei++;
+                    for (size_t k = inv_ei;
+                         k < inv_edges.size() &&
+                         inv_edges[k] <= ecen + bracket; k++) {
+                        /* the anchor is the trailing edge plus the
+                         * offset, everywhere (SYNC_INV_OFFSET) */
+                        long A = inv_edges[k] + SYNC_INV_OFFSET;
+                        if (A < expected - p.search_win ||
+                            A > expected + p.search_win)
+                            continue;
+                        /* prev_edge carries the offset through phi, so
+                         * the period is judged anchor-to-anchor */
+                        long per = A - prev_edge;
+                        if (per >= p.min_period && per <= p.max_period) {
+                            phi = (A - grid + LINE_SAMPLES) % LINE_SAMPLES;
+                            /* every preamble anchor feeds the period fit;
+                             * the estimate itself is only replaced once
+                             * the fit has enough of them */
+                            inv_drift.add(grid / LINE_SAMPLES, A);
+                            if (inv_drift.n >= (double)SYNC_DRIFT_MIN_PTS)
+                                inv_period = inv_drift.period();
+                            inv_phase = (double)phi;
+                            fb_dir = 0;
+                            fb_run = 0;
+                            last_shape = inv_edges[k];
+                            miss = 0;
+                            since_shape = 0;
+                            how = 0;
+                        }
+                        break;
+                    }
+                }
+                if (how != 0) {
+                    /* Hold the phase - at the MEASURED line period, not at
+                     * the nominal 4000 (DEVIATIONS.md #19). This is the
+                     * whole difference between a chart that stands square
+                     * and one sheared by the receiver's clock: nothing in
+                     * the picture can correct the phase here, so the rate
+                     * measured off the preamble is all there is. */
+                    inv_phase += inv_period - (double)LINE_SAMPLES;
+                    if (inv_phase < 0.0)
+                        inv_phase += (double)LINE_SAMPLES;
+                    else if (inv_phase >= (double)LINE_SAMPLES)
+                        inv_phase -= (double)LINE_SAMPLES;
+                    phi = (long)(inv_phase + 0.5) % LINE_SAMPLES;
+                    /* ... and follow a dropout the same way, off the
+                     * picture's own content: the rate is right but the
+                     * stream can still lose samples, and here nothing
+                     * else would ever notice (sync_content_step) */
+                    if (!dark) {
+                        long lag = sync_content_step(
+                            sm, grid, phi,
+                            grid + 2 * LINE_SAMPLES <= total);
+                        if (lag != 0) {
+                            inv_phase += (double)lag;
+                            while (inv_phase < 0.0)
+                                inv_phase += (double)LINE_SAMPLES;
+                            while (inv_phase >= (double)LINE_SAMPLES)
+                                inv_phase -= (double)LINE_SAMPLES;
+                            phi = (long)(inv_phase + 0.5) % LINE_SAMPLES;
+                            img.relocks++;
+                        }
+                    }
+                    miss++;
+                    since_shape++;
+                    how = 2;
+                }
             } else {
                 /* shape match: candidate edge near the predicted edge.
                  * The period is checked against the PREVIOUS line's
@@ -382,8 +702,10 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                 }
             }
 
-            if (how != 0) {
+            if (how != 0 && !inv_mode) {
                 /* fallback: min-brightness search (docs/01 sec. 3.2(8)).
+                 * (Skipped in inv_mode: a WMO-phasing picture has no
+                 * pulse to find - holding the phase is correct there.)
                  * Full window until first lock, narrow window after. */
                 long lo, hi;
                 if (ever_locked) {

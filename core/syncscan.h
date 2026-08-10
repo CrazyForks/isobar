@@ -24,6 +24,7 @@
 #define ISOBAR_SYNCSCAN_H
 
 #include <vector>
+#include <cmath>     /* sqrt, for the content-step correlation below */
 #include <cstdint>
 #include <cstddef>   /* size_t — older libstdc++ doesn't leak it via <vector>,
                       * so gcc-11 (ubuntu-22.04-arm) rejects the unqualified
@@ -127,6 +128,394 @@ SyncParams sync_default_params();
  * This gates the chain START only - the chain's own period test and
  * everything downstream are unchanged. */
 inline int sync_dark_floor(const SyncParams &p) { return p.dark_th / 3; }
+
+/* ---- WMO inverted phasing (DEVIATIONS.md #19) ----
+ *
+ * The machinery above knows one sync shape: the JMH-style black pulse in a
+ * white signal. WMO-standard phasing is the inverse: a BLACK signal with
+ * one WHITE pulse per line (IOC 576: 25 ms = 5% of the line), sent for at
+ * least 30 s before each chart. VMW (Wiluna) works exactly this way and
+ * sends NO per-line pulse during the picture at all, so the black-pulse
+ * detector never locks (0.9% on a 646 s off-air recording) and the
+ * fallback then wanders the phase across picture content (133 false
+ * corrections) - the decoded chart looks mirrored/shredded.
+ *
+ * The inverted path below acquires the phase from the white pulse and
+ * then HOLDS it (inv_mode in scan_lines/LiveScan): no fallback, no
+ * release, because the picture carries nothing to track - coasting is
+ * exactly right there. The next chart's phasing re-anchors the phase
+ * through the inverted shape match, which also tracks clock drift.
+ *
+ * Brightness floor: the mirror of sync_dark_floor. A white phasing pulse
+ * is genuinely white (~230-251 against black ~20-60 on the VMW
+ * recording), so halfway between dark_th and full scale separates it
+ * from mid-grey picture content. Ours, no ini key. */
+inline int sync_bright_floor(const SyncParams &p) { return (p.dark_th + 255) / 2; }
+
+/* Offset from the white phasing pulse's trailing edge to the line's first
+ * pixel: -196 samples, i.e. the pulse's LEADING edge (its width is 196
+ * samples here and 196-197 on the two JMH fixtures - the WMO 25 ms). The
+ * plain reading of the standard: the line begins with 5% white.
+ *
+ * Where the seam sits matters more than it looks, because the line wraps
+ * there. On a station with per-line sync the port has no choice - the
+ * phase IS the sync pulse - but a WMO-phasing picture carries no sync, so
+ * the anchor is a convention, and the one thing it must do is fall off the
+ * page. VMW's chart occupies about two thirds of the drum, leaving a
+ * 500 px blank margin, and the anchor has to land in it:
+ *
+ *   anchor                       page moves   seam lands
+ *   JMH's own convention (+58)       0 px     21 px INSIDE the page - the
+ *                                             masthead's first letter and
+ *                                             the panel border wrapped to
+ *                                             the far right
+ *   pulse trailing edge (0)         22 px     2 px into the margin
+ *   pulse leading edge (-196)       95 px     75 px into the margin
+ *
+ * (+58 is what JMH itself uses: on `jmh sample.wav` and
+ * `jmh-kiwi-testchart.wav` the phase its picture sync holds sits +61 and
+ * +60 past the phasing pulse's trailing edge, measured over 118 and 55
+ * preamble lines. Worth knowing, and it is what the port anchors JMH at -
+ * but that convention is about where JMH puts its sync strip, not about
+ * where a chart's page begins, and following it costs VMW a sliver of its
+ * own chart.) Our constant, no ini key; applied at every inverted anchor
+ * (acquisition and shape match, batch and live). */
+inline const int SYNC_INV_OFFSET = -196;
+
+/* Confirmation length for the far escape out of inv_mode (DEVIATIONS.md
+ * #19): the chain must appear at the same phase on this many lines before
+ * the decoder believes a JMH-style station took over. Two agreeing lines
+ * (the sync_step_lock philosophy) are NOT enough here: a tall chart
+ * feature is a per-line pulse too - VMW's end-of-chart band contains a
+ * 70 px black bar that chained pitch-black 180-199-sample runs at period
+ * ~3998 for 12 consecutive lines (measured at lines 1112-1123 of the VMW
+ * recording). A real station's strip repeats for the whole picture, so
+ * 20 keeps the takeover working while chart decoration cannot reach it.
+ * Lines with no chain at all do not reset the count (a pulse embedded in
+ * photo content is missed on some lines). */
+inline const int SYNC_ESC_CONFIRM = 20;
+
+/* Consecutive black-dominant lines carrying a pulse at the tracked phase
+ * before a re-anchor mid-stream is believed to be a phasing preamble
+ * (DEVIATIONS.md #19). A real preamble runs at least 30 s = 60 lines; a
+ * chart's own dark bands are far shorter - measured on the VMW recording,
+ * lines 351-352 (2) and 383-386 (4) mean out below dark_th inside the
+ * picture, and each one re-anchored the phase up to search_win, walking
+ * the image sideways in visible steps. Eight lines clears every band on
+ * that recording (the end-of-chart band is 21, but it is solid black and
+ * offers no pulse to re-anchor on) and costs nothing on a real preamble,
+ * which is held on the acquisition chain's own count anyway. */
+inline const int SYNC_PHASING_CONFIRM = 8;
+
+/* Line period estimated from the phasing preamble (DEVIATIONS.md #19).
+ *
+ * A station without per-line sync gives the decoder exactly one chance to
+ * measure the line rate: the phasing pulses. The nominal 4000 samples is
+ * NOT the rate that arrives - a KiwiSDR's 12 kHz stream is really
+ * ~12000.96 Hz, which is 3999.68 samples per line (measured by fitting 57
+ * preamble pulses of the VMW recording, residual max 1.7 samples). Held at
+ * exactly 4000, the phase walks 0.32 samples per line: 412 samples = 154 px
+ * of shear across one chart, which is what made the decoded chart look
+ * sheared with content cut at the seam. A station WITH per-line sync never
+ * shows this - its tracking absorbs the drift line by line.
+ *
+ * So: least squares over the preamble anchors (line index k against anchor
+ * position, both exact), and the coasting phase then advances by the fitted
+ * period instead of 4000. Least squares rather than first-to-last because
+ * the anchors jitter ~1.7 samples: the fit's slope error over 57 lines is
+ * 0.014 samples/line (5 px over a chart) against 0.04 (17 px) for the
+ * endpoints alone.
+ *
+ * `add` takes absolute anchor positions, so a wrap of the in-line phase
+ * cannot corrupt the fit; callers reset() at each acquisition and at the
+ * start of each new preamble, keeping the previous estimate meanwhile.
+ * Shared by scan_lines and LiveScan so the two stay byte-identical. */
+inline const int SYNC_DRIFT_MIN_PTS = 20;   /* anchors before a fit is used */
+inline const double SYNC_DRIFT_MAX = 8.0;   /* samples/line, 0.2%: a bigger
+                                             * slope is a bad fit, not a
+                                             * clock                        */
+
+struct SyncInvDrift {
+    double n, sk, skk, sr, skr;   /* least-squares sums over (k, r) */
+    long first;                   /* line index of the first anchor */
+    long last_line, last_anchor;  /* previous point, for unwrapping   */
+    bool have;
+
+    void reset()
+    {
+        n = sk = skk = sr = skr = 0.0;
+        first = 0;
+        last_line = 0;
+        last_anchor = 0;
+        have = false;
+    }
+
+    /* `anchor` is an absolute position; whether it landed just before or
+     * just after its line's window boundary is an accident of the phase,
+     * and a point a whole line away from its neighbours would swamp the
+     * fit (measured: the slope ran off to the clamp and the estimate fell
+     * back to the nominal 4000). So each point is unwrapped onto the
+     * previous one first. */
+    void add(long line, long anchor)
+    {
+        if (!have) {
+            first = line;
+            have = true;
+        } else {
+            long want = last_anchor + 4000 * (line - last_line);
+            while (anchor - want > 2000)
+                anchor -= 4000;
+            while (anchor - want < -2000)
+                anchor += 4000;
+        }
+        last_line = line;
+        last_anchor = anchor;
+        double k = (double)(line - first);
+        double r = (double)(anchor - 4000 * line);   /* residual vs nominal */
+        n += 1.0;
+        sk += k;
+        skk += k * k;
+        sr += r;
+        skr += k * r;
+    }
+
+    /* samples per line, or 4000 while the fit is not yet trustworthy */
+    double period() const
+    {
+        double den = n * skk - sk * sk;
+        if (n < (double)SYNC_DRIFT_MIN_PTS || den <= 0.0)
+            return 4000.0;
+        double b = (n * skr - sk * sr) / den;
+        if (b > SYNC_DRIFT_MAX || b < -SYNC_DRIFT_MAX)
+            return 4000.0;
+        return 4000.0 + b;
+    }
+};
+
+/* ---- Content re-alignment for pulse-free pictures (DEVIATIONS.md #19) ----
+ *
+ * A held phase is only as good as the stream feeding it. A networked SDR
+ * drops audio: the VMW recording loses 60-80 ms three times inside one
+ * chart, and every lost sample moves the rest of the picture sideways for
+ * good. A station with per-line sync shrugs this off - sync_step_lock
+ * re-locks on the line the step happens. A WMO-phasing station sends
+ * nothing to re-lock to, so the picture ITSELF is the only reference left.
+ *
+ * It is a good one. A fax line's content does not move: the drum turns at
+ * a constant rate, so any lag between one line and the next that is not
+ * the measured drift is a timing fault, and the same lag then holds for
+ * every following line. Measured on the VMW recording, the three real
+ * steps stand out completely - at the step the correlation peaks at
+ * 0.37-0.84 against 0.08-0.18 at zero lag, while ordinary picture lines
+ * peak at zero. Corrected, the chart's panel border runs straight down
+ * 600 lines at one column (it walked 972 -> 744 -> 507 -> 316 before), and
+ * the page lands inside the line with a white margin at both ends.
+ *
+ * The search is decimated by SYNC_STEP_DEC for the coarse pass and refined
+ * at full rate, and a candidate must survive four tests: it moves further
+ * than the drift model ever would (SYNC_STEP_MIN), the peak is a real
+ * match (SYNC_STEP_CORR) that beats no-move by SYNC_STEP_MARGIN, and the
+ * NEXT line agrees with it to SYNC_STEP_TOL - the one-line lookahead
+ * sync_step_lock uses, for the same reason: a real step persists, a chance
+ * resemblance between two rows does not. inv_mode only. */
+inline const long SYNC_STEP_MAX_LAG = 800;   /* +-300 px of search      */
+inline const int SYNC_STEP_DEC = 4;          /* coarse-pass decimation  */
+inline const long SYNC_STEP_MIN = 20;        /* smallest lag acted on   */
+inline const long SYNC_STEP_TOL = 12;        /* next-line agreement     */
+inline const double SYNC_STEP_CORR = 0.35;   /* peak must be a match    */
+inline const double SYNC_STEP_CORR2 = 0.30;  /* ... on the next line    */
+inline const double SYNC_STEP_MARGIN = 0.10; /* ... and beat no-move by */
+inline const double SYNC_STEP_RIVAL = 0.10;  /* ... and every other lag */
+inline const long SYNC_STEP_RIVAL_APART = 100;  /* "other" = this far off */
+
+/* Minimum ink on BOTH lines before a lag between them means anything: the
+ * RMS of the mean-removed profile, in grey levels. A line that is mostly
+ * blank paper with a little text cannot support the measurement - a few
+ * marks line up about as well at several lags, and the winner is then
+ * noise. This is the test that separates the real steps from the false
+ * ones on the VMW recording, where the rival margin alone does not:
+ *
+ *   line   margin   ink (this line / previous)   what it is
+ *    222    0.125       26.1 / 50.5              masthead: FALSE
+ *    258    0.023       12.6 / 49.6              masthead: FALSE
+ *    381    0.095        8.9 / 20.7              blank band: FALSE
+ *   1032    0.000       89.7 / 119.8             dense picture: FALSE
+ *    686    0.133       38.3 / 50.5              real dropout
+ *    911    0.649       47.3 / 45.2              real dropout
+ *    952    0.431       56.6 / 62.4              real dropout
+ *
+ * Both false steps in the masthead band shifted the top of the chart and
+ * tore the Bureau's own logo in half; every real one is a lost 60-80 ms of
+ * audio. */
+inline const double SYNC_STEP_INK = 32.0;
+
+/* Mean-removed copy of the line at `grid` rotated by `phi`, every `dec`th
+ * sample averaged. `out` holds 4000/dec values. */
+inline void sync_line_prof(const std::vector<int> &sm, long grid, long phi,
+                           int dec, std::vector<double> &out)
+{
+    const long LINE = 4000;
+    long m = LINE / dec;
+    out.resize((size_t)m);
+    double mean = 0.0;
+    for (long i = 0; i < m; i++) {
+        long s = 0;
+        for (int k = 0; k < dec; k++)
+            s += sm[grid + (i * dec + k + phi) % LINE];
+        out[(size_t)i] = (double)s / dec;
+        mean += out[(size_t)i];
+    }
+    mean /= (double)m;
+    for (long i = 0; i < m; i++)
+        out[(size_t)i] -= mean;
+}
+
+/* RMS of a mean-removed profile: how much ink the line carries. */
+inline double sync_prof_ink(const std::vector<double> &a)
+{
+    double s = 0.0;
+    for (size_t i = 0; i < a.size(); i++)
+        s += a[i] * a[i];
+    return a.empty() ? 0.0 : std::sqrt(s / (double)a.size());
+}
+
+/* Circular correlation of two mean-removed profiles at one lag, normalised
+ * by their norms (so it is a correlation coefficient in [-1, 1]). */
+inline double sync_prof_corr(const std::vector<double> &a,
+                             const std::vector<double> &b, long lag)
+{
+    long m = (long)a.size();
+    double s = 0.0, na = 0.0, nb = 0.0;
+    for (long i = 0; i < m; i++) {
+        double bv = b[(size_t)(((i - lag) % m + m) % m)];
+        s += a[(size_t)i] * bv;
+        na += a[(size_t)i] * a[(size_t)i];
+        nb += bv * bv;
+    }
+    if (na < 1.0 || nb < 1.0)
+        return 0.0;
+    return s / (std::sqrt(na) * std::sqrt(nb));
+}
+
+/* Best lag of `a` against `b` within +-max_lag (in profile samples), the
+ * correlation there, and the best RIVAL - the strongest peak that is
+ * neither this one nor no-move at all. The peak has to win against that
+ * rival, not merely be the largest number in the array: on a line that is
+ * mostly white paper with a little text, several lags line the few marks
+ * up about equally well and the winner is a coin toss. Measured on the VMW
+ * recording, the peak-minus-rival margin at the three real dropouts is
+ * 0.16 / 0.40 / 0.65, and at every false candidate 0.00-0.12 (two of them
+ * in the masthead band, which they mangled). */
+inline long sync_prof_peak(const std::vector<double> &a,
+                           const std::vector<double> &b, long max_lag,
+                           double *corr_out, double *rival_out)
+{
+    std::vector<double> cc((size_t)(2 * max_lag + 1));
+    long best = 0;
+    double bc = -2.0;
+    for (long lag = -max_lag; lag <= max_lag; lag++) {
+        double c = sync_prof_corr(a, b, lag);
+        cc[(size_t)(lag + max_lag)] = c;
+        if (c > bc) {
+            bc = c;
+            best = lag;
+        }
+    }
+    if (corr_out)
+        *corr_out = bc;
+    if (rival_out) {
+        double riv = -2.0;
+        long apart = SYNC_STEP_RIVAL_APART / SYNC_STEP_DEC;
+        for (long lag = -max_lag; lag <= max_lag; lag++) {
+            long dp = lag - best < 0 ? best - lag : lag - best;
+            long dz = lag < 0 ? -lag : lag;
+            if (dp < apart || dz < apart)
+                continue;
+            double c = cc[(size_t)(lag + max_lag)];
+            if (c > riv)
+                riv = c;
+        }
+        *rival_out = riv;
+    }
+    return best;
+}
+
+/* The sideways step this line's content took against the previous line's,
+ * in samples, or 0 to leave the phase alone. `phi` is the phase predicted
+ * for this line (drift already applied). Needs the NEXT line's video too;
+ * callers without it (end of stream) pass have_next = false and get 0.
+ * Shared by scan_lines and LiveScan (invphasing-test). */
+inline long sync_content_step(const std::vector<int> &sm, long grid,
+                              long phi, bool have_next)
+{
+    const long LINE = 4000;
+    if (grid < LINE || !have_next)
+        return 0;
+    if (grid + 2 * LINE > (long)sm.size())
+        return 0;
+
+    std::vector<double> prev, cur, next;
+    sync_line_prof(sm, grid - LINE, phi, SYNC_STEP_DEC, prev);
+    sync_line_prof(sm, grid, phi, SYNC_STEP_DEC, cur);
+    if (sync_prof_ink(cur) < SYNC_STEP_INK ||
+        sync_prof_ink(prev) < SYNC_STEP_INK)
+        return 0;                      /* too little to measure with  */
+
+    long span = SYNC_STEP_MAX_LAG / SYNC_STEP_DEC;
+    double c = 0.0, rival = 0.0;
+    long k = sync_prof_peak(cur, prev, span, &c, &rival);
+    if (k * SYNC_STEP_DEC > -SYNC_STEP_MIN && k * SYNC_STEP_DEC < SYNC_STEP_MIN)
+        return 0;                      /* the drift model's territory */
+    if (c < SYNC_STEP_CORR)
+        return 0;
+    if (c - sync_prof_corr(cur, prev, 0) < SYNC_STEP_MARGIN)
+        return 0;                      /* no better than not moving   */
+    if (c - rival < SYNC_STEP_RIVAL)
+        return 0;                      /* no better than other lags   */
+
+    /* one line of lookahead: a real step persists */
+    sync_line_prof(sm, grid + LINE, phi, SYNC_STEP_DEC, next);
+    double c2 = 0.0;
+    long k2 = sync_prof_peak(next, prev, span, &c2, nullptr);
+    long d = (k2 - k) * SYNC_STEP_DEC;
+    if (d < 0) d = -d;
+    if (c2 < SYNC_STEP_CORR2 || d > SYNC_STEP_TOL)
+        return 0;
+
+    /* refine at full rate around the coarse peak */
+    sync_line_prof(sm, grid - LINE, phi, 1, prev);
+    sync_line_prof(sm, grid, phi, 1, cur);
+    long base = k * SYNC_STEP_DEC;
+    long best = base;
+    double bc = -2.0;
+    for (long lag = base - SYNC_STEP_DEC - 2;
+         lag <= base + SYNC_STEP_DEC + 2; lag++) {
+        double cc = sync_prof_corr(cur, prev, lag);
+        if (cc > bc) {
+            bc = cc;
+            best = lag;
+        }
+    }
+    return best;
+}
+
+/* Is the whole 4000-sample line starting at `grid` dark on average?
+ * The phasing gate: WMO phasing lines are black-dominant (mean ~50 on the
+ * VMW recording, ~5% white pulse), JMH lines and picture lines are not
+ * (typically >150). This is what keeps the inverted path from ever firing
+ * on a normal station or on picture content - including VMW's own dark
+ * chart bands, whose lines still mean out above dark_th. */
+inline bool sync_line_dark(const std::vector<int> &sm, long grid,
+                           const SyncParams &p)
+{
+    const long LINE = 4000;
+    if (grid < 0 || grid + LINE > (long)sm.size())
+        return false;
+    long s = 0;
+    for (long i = grid; i < grid + LINE; i++)
+        s += sm[i];
+    return s / LINE < p.dark_th;
+}
 
 /* Mean brightness of the dark run STARTING at `pos`, or 255 if there is no
  * dark run there. The same quantity find_lock scores a chain start by,
