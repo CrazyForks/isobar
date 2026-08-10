@@ -76,8 +76,8 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     The other ten ini defaults are adopted exactly.
     **A step in the sync position is followed on confirmation, and every
     other fallback result is rate-limited rather than rejected** (added
-    2026-08-02; `sync_step_lock()` and `sync_slew()` in `core/syncscan.h`,
-    shared by the batch and live paths). The original's `SyncWidth` guard
+    2026-08-02; `sync_step_lock()` and `sync_slew()` in `core/syncscan.h`).
+    The original's `SyncWidth` guard
     *rejects* a fallback position further than `MaxJump` from the previous
     one. Ours cannot, for two reasons.
     First, the sync strip is rotated to index 0 — the seam where a line
@@ -126,7 +126,7 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     **The line phase is anchored on the darkest window of the sync pulse,
     not on its leading edge** (added 2026-08-03; `sync_anchor()` in
     `core/syncscan.h`, applied at every point where a detected position
-    becomes the phase, in both the batch and live paths). The original — and
+    becomes the phase). The original — and
     every detector here until now — publishes the one sample where the video
     first crosses `DarkThreshold`. That sample moves with noise and with
     whatever picture abuts the pulse; the whole pulse is far bigger
@@ -300,8 +300,8 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     content (133 false corrections), shredding the chart into
     mirrored-looking fragments.
     The port now mirrors the normal acquisition with the polarity
-    flipped (`find_inv_edges` / `find_inv_lock` in `core/syncscan.cpp`,
-    twins in `core/live.cpp`): bright runs of sync-pulse width chain
+    flipped (`LiveScan::try_inv_lock` in `core/live.cpp`, and the
+    bright-run branch of `SyncRuns`): bright runs of sync-pulse width chain
     across lines, gated to black-dominant lines (`sync_line_dark`) and a
     white floor (`sync_bright_floor`), both in `core/syncscan.h`. The
     anchor is the pulse's LEADING edge (`SYNC_INV_OFFSET` = −196 from the

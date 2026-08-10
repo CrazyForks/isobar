@@ -98,8 +98,7 @@ struct SyncParams {
 SyncParams sync_default_params();
 
 /* How black a dark run must be, on average, to be allowed to START a lock
- * chain. Shared by scan_lines and LiveScan (the two must stay
- * byte-identical - live-test).
+ * chain (LiveScan::try_lock).
  *
  * Lock acquisition takes the first edge that sustains lock_hyst valid
  * ~4000-sample periods. On a picture-heavy image that is not enough:
@@ -129,12 +128,15 @@ SyncParams sync_default_params();
  * everything downstream are unchanged. */
 inline int sync_dark_floor(const SyncParams &p) { return p.dark_th / 3; }
 
-/* ---- Front end, shared by scan_lines and LiveScan ----
+/* ---- Front end ----
  *
- * The batch scanner walks a finished buffer and the live one is fed a
- * sample at a time, but the arithmetic below has to be IDENTICAL between
- * them or the two paths decode the same audio differently. It was written
- * out twice; these are the single copies. */
+ * The pieces of the scan that are pure functions of the smoothed video:
+ * the detectors, the two fallback searches, the anchor refinement. They
+ * live here rather than in live.cpp because they are the parts worth
+ * reading on their own - each one carries the measurements that set its
+ * thresholds - and because they were once written out twice, in a batch
+ * scanner and a streaming one, and drifted. There is one copy now, and
+ * one caller: LiveScan. */
 
 /* One sample of the 8-sample moving average every detector here runs on.
  * `acc` is the caller's running sum and `old` the sample 8 back (unused
@@ -202,7 +204,7 @@ struct SyncRuns {
  * corrections) - the decoded chart looks mirrored/shredded.
  *
  * The inverted path below acquires the phase from the white pulse and
- * then HOLDS it (inv_mode in scan_lines/LiveScan): no fallback, no
+ * then HOLDS it (inv_mode in LiveScan): no fallback, no
  * release, because the picture carries nothing to track - coasting is
  * exactly right there. The next chart's phasing re-anchors the phase
  * through the inverted shape match, which also tracks clock drift.
@@ -289,8 +291,7 @@ inline const int SYNC_PHASING_CONFIRM = 8;
  *
  * `add` takes absolute anchor positions, so a wrap of the in-line phase
  * cannot corrupt the fit; callers reset() at each acquisition and at the
- * start of each new preamble, keeping the previous estimate meanwhile.
- * Shared by scan_lines and LiveScan so the two stay byte-identical. */
+ * start of each new preamble, keeping the previous estimate meanwhile. */
 inline const int SYNC_DRIFT_MIN_PTS = 20;   /* anchors before a fit is used */
 inline const double SYNC_DRIFT_MAX = 8.0;   /* samples/line, 0.2%: a bigger
                                              * slope is a bad fit, not a
@@ -505,7 +506,7 @@ inline long sync_prof_peak(const std::vector<double> &a,
  * in samples, or 0 to leave the phase alone. `phi` is the phase predicted
  * for this line (drift already applied). Needs the NEXT line's video too;
  * callers without it (end of stream) pass have_next = false and get 0.
- * Shared by scan_lines and LiveScan (invphasing-test). */
+ * (invphasing-test.) */
 inline long sync_content_step(const std::vector<int> &sm, long grid,
                               long phi, bool have_next)
 {
@@ -579,8 +580,8 @@ inline bool sync_line_dark(const std::vector<int> &sm, long grid,
 }
 
 /* Mean brightness of the dark run STARTING at `pos`, or 255 if there is no
- * dark run there. The same quantity find_lock scores a chain start by,
- * measured at a fallback result instead. Shared by scan_lines and LiveScan.
+ * dark run there. The same quantity try_lock scores a chain start by,
+ * measured at a fallback result instead.
  *
  * Probed from min_pulse/2 INSIDE the run, not at `pos` itself: both callers
  * publish the bright->dark edge, where the moving average is still crossing
@@ -606,7 +607,7 @@ inline int sync_run_mean(const std::vector<int> &sm, long pos,
 }
 
 /* Refine a sync position from the dark run's leading edge to the steadiest
- * point of the pulse. Shared by scan_lines and LiveScan (live-test).
+ * point of the pulse.
  *
  * Every detector here publishes the same thing: the first sample where the
  * 8-sample moving average crosses dark_th. That is ONE sample, and it moves
@@ -714,7 +715,7 @@ inline long sync_anchor(const std::vector<int> &sm, long pos,
  *     "genuinely black" is asked instead (the body's comment has the
  *     measurements), and
  *   - the dark run it sits in must be a plausible sync pulse WIDTH
- *     (min_pulse..max_pulse), the same bound find_sync_edges applies.
+ *     (min_pulse..max_pulse), the same bound the edge detector applies.
  * The width test is what keeps a chart's wide black margin out: a margin
  * is darker than anything and repeats on every line, so neither of the
  * first two tests excludes it on their own.
@@ -765,7 +766,7 @@ inline long sync_line_pulse(const std::vector<int> &sm, long grid,
      * So accept on absolute darkness as an alternative: a sync pulse is
      * genuinely black (run-mean 12 on himawari, 3 on FAXSignal, 17-19 on
      * the two off-air recordings) while the picture chains that compete
-     * with it sit near dark_th/2. This is the same floor find_lock uses
+     * with it sit near dark_th/2. This is the same floor try_lock uses
      * on a chain start, for the same reason. It only ADDS acceptances -
      * anything the margin already admitted still is - so chart-like
      * content behaves exactly as before, and the width test above still
@@ -816,7 +817,7 @@ inline long sync_line_pulse(const std::vector<int> &sm, long grid,
  * Needs two whole lines of video from `grid`; callers that do not have
  * them yet must wait (LiveScan) or skip the check (end of a file).
  * Returns the absolute position to snap to, or -1 to leave the phase
- * alone. Shared by scan_lines and LiveScan. */
+ * alone. */
 inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
                            const SyncParams &p)
 {
@@ -842,13 +843,11 @@ inline long sync_step_lock(const std::vector<int> &sm, long grid, long phi,
     return grid + here;
 }
 
-/* ---- The two fallback searches, shared by scan_lines and LiveScan ----
+/* ---- The two fallback searches ----
  *
- * Both are pure functions of the smoothed video and a window, so the batch
- * and streaming paths call the very same code (they each held a copy until
- * these were shared). The callers differ only in how they pick [lo, hi]:
- * the whole line until the first lock of the stream, +-fallback_win/2
- * around the predicted edge afterwards. */
+ * Both are pure functions of the smoothed video and a window. The caller
+ * picks [lo, hi]: the whole line until the first lock of the stream,
+ * +-fallback_win/2 around the predicted edge afterwards. */
 
 /* Our own second-chance search: the darkest position in [lo, hi], valid
  * when it is dark (dark_th) and dips at least fb_thresh below the window
@@ -966,8 +965,7 @@ inline long sync_fallback_edge(const std::vector<int> &sm, long lo, long hi,
  * A move within search_win is a normal correction and is taken whole.
  *
  * `dir_run`/`len_run` hold the run across lines; a shape lock resets
- * them (pass 0/0). Shared by scan_lines and LiveScan so the batch and
- * live paths cannot drift apart (cli/live-test.cpp checks they don't). */
+ * them (pass 0/0). */
 inline long sync_slew(long phi, long target, const SyncParams &p,
                       int &dir_run, int &len_run)
 {
@@ -996,7 +994,9 @@ inline long sync_slew(long phi, long target, const SyncParams &p,
     return (phi + d + LINE) % LINE;
 }
 
-/* Scan the whole 8000 S/s video stream and extract pixel lines.
+/* Scan a whole 8000 S/s video stream and extract pixel lines: the batch
+ * entry point, implemented as one pass of LiveScan (core/live.h) over the
+ * finished buffer, so there is a single sync state machine.
  * Lines are emitted from the very start (unrotated until lock, like
  * the original - the preamble is part of the image).
  * `line_state` (may be null) is called after each emitted line with

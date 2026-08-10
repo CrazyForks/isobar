@@ -38,6 +38,17 @@ rewrite to the original's fixed 4000-sample grid cadence).
   which is also what the original does (it never re-searches a whole line
   once locked). `ctest -R phasing-test`; the two older fixtures decode
   byte-identically
+- ✅ One sync state machine (S39): `scan_lines()` is a single-shot feed of
+  `LiveScan` rather than a second implementation of it, the way
+  `fm_decode()` is a loop over `FmDecoder`. ~500 duplicated lines and
+  600 lines of `syncscan.cpp` are gone. Verified byte-identical on all
+  eleven recordings before the switch, and the comparison found a real
+  bug on the way: a stream ending while unlocked returned from `pump()`
+  at a "wait for more samples" gate and never emitted its last line
+  (`phasing-test` catches it now — 179 lines instead of 180).
+  `live-test` changes meaning from "two implementations agree" to
+  "chunk boundaries cannot change a decode", and gains the one check no
+  self-comparison can make: one line out per whole line window in
 - ✅ 300/450 Hz tone detection (resonators on the video stream, threshold
   calibrated on the sample's real start/stop tones; `ctest -R tone-test`;
   drives the Control LED — flashes by too fast to eyeball on file decode,

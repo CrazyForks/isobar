@@ -1,9 +1,28 @@
-/* live-test - verifies LiveScan (streaming) against scan_lines (batch).
+/* live-test - CHUNKING INVARIANCE for LiveScan, plus the line-count
+ * invariant that no single implementation can check against itself.
  *
  * Feeds the demodulated WEFAX video through LiveScan in chunks (several
  * chunk sizes, incl. odd ones that split sync pulses and lines) and
- * collects the emitted lines. The result must match the batch decode
- * line for line, byte for byte, with equal stats.
+ * collects the emitted lines. The result must match scan_lines line for
+ * line, byte for byte, with equal stats.
+ *
+ * What that comparison means changed in v1.8.0. scan_lines used to be a
+ * SECOND implementation of the sync state machine and this test pinned
+ * the two together; it is now a single-shot feed of this very class
+ * (core/syncscan.cpp), so what is really being asserted here is that HOW
+ * the audio is cut up cannot change the decode - the property live audio
+ * actually depends on, since a sound card's buffer boundaries fall
+ * wherever they like.
+ *
+ * That leaves one thing the comparison can no longer see, because both
+ * sides would now be wrong together: whether lines go MISSING at the end
+ * of a stream. So it is asserted directly, against arithmetic rather than
+ * against another decoder - every complete 4000-sample window must emit
+ * exactly one line, whatever the sync state machine decided about it.
+ * That invariant held on all eleven recordings when the paths were
+ * merged, and it is what caught the end-of-stream bug that merge exposed
+ * (a stream ending while unlocked returned from pump() at the "wait for
+ * more samples" gate and never emitted its last line).
  *
  * Sample-agnostic: prefers the full "jmh sample.wav" when present, else
  * the committed 30 s "jmh-sample-short.wav" excerpt.
@@ -110,8 +129,21 @@ int main()
             ref.lines.size(), ref.lines_locked, ref.lines_corrected,
             ref.lines_coasted, ref.relocks);
 
-    const size_t chunks[] = {800, 4000, 7777, 65536, 1000000};
     int fails = 0;
+
+    /* One line per complete line window, no matter what the state machine
+     * made of it - the end-of-stream check the chunk comparison below
+     * cannot make on its own (see the header). */
+    size_t want = video.size() / 4000;
+    if (ref.lines.size() != want) {
+        fprintf(stderr, "FAIL: %zu samples of video is %zu whole lines, "
+                        "but %zu came out%s\n",
+                video.size(), want, ref.lines.size(),
+                ref.lines.size() < want ? " - lines lost at the end?" : "");
+        fails++;
+    }
+
+    const size_t chunks[] = {800, 4000, 7777, 65536, 1000000};
     for (size_t chunk : chunks)
         fails += run_case(video, chunk, ref, false);
     /* the posted-flush path must land in exactly the same place */

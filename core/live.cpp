@@ -1,6 +1,12 @@
-/* live.cpp - see live.h. Algorithms mirror syncscan.cpp; read that
- * file's comments for the spec mapping. Only the streaming
- * re-structuring is commented here. */
+/* live.cpp - see live.h.
+ *
+ * This is THE sync state machine: the batch entry point scan_lines()
+ * (core/syncscan.cpp) is a single-shot feed of this class, the way
+ * fm_decode() is a loop over FmDecoder. Until v1.8.0 syncscan.cpp held a
+ * second implementation of everything below and the two were kept in step
+ * by hand; the spec mapping that lived in its comments has been brought
+ * here, so this file and syncscan.h are now the whole story.
+ * docs/01-program-analysis.md sec. 3.2(7)(8)(10) is the spec. */
 
 #include "live.h"
 
@@ -105,8 +111,11 @@ void LiveScan::feed(const uint8_t *data, size_t n,
         uint8_t v = data[k];
         buf.push_back(v);
 
-        /* moving average, window 8 - the same step the batch scanner's
-         * moving_average() runs over a finished buffer (syncscan.h) */
+        /* moving average, window 8 (sync_ma_step, syncscan.h): removes
+         * single-sample noise before the dark-run shape check and the
+         * fallback brightness search. The ramp-up divisor over the first
+         * 8 samples is the fiddly part, which is why it is one shared
+         * function rather than written out here */
         sm.push_back(sync_ma_step(acc, i, v, i >= 8 ? buf[i - 8] : (uint8_t)0));
 
         /* the two run detectors, one shared rule (SyncRuns, syncscan.h):
@@ -136,9 +145,10 @@ void LiveScan::feed(const uint8_t *data, size_t n,
     }
 }
 
-/* Lock acquisition (syncscan's find_lock, streaming version): first
- * edge (>= lock_from) starting a chain of lock_hyst valid periods,
- * junk edges skipped.
+/* Lock acquisition: the first edge (>= lock_from) starting a chain of
+ * lock_hyst valid ~4000-sample periods, junk edges from image content
+ * skipped in between (lock_hyst comes from RReSycn - NOT LReSycn, which
+ * is the release counter; docs/01 sec. 3.2(8)).
  * Returns the chain-start edge position when it lies inside the
  * current window [grid, grid+4000);
  * -1 = undecidable yet (wait for more data);
@@ -150,8 +160,7 @@ long LiveScan::try_lock(long grid, bool full_window)
     long finalized = (long)buf.size() - p.max_pulse - 1;
     int need = p.lock_hyst > 0 ? p.lock_hyst : 1;
 
-    /* Allowed neighbourhood for the chain start; mirrors syncscan's
-     * find_lock (the two must stay byte-identical - live-test). Before
+    /* Allowed neighbourhood for the chain start. Before
      * the first lock the whole line is searched; afterwards only the
      * fallback's neighbourhood around the expected phase, so an
      * all-dark preamble cannot make the phase run away. The search
@@ -222,9 +231,8 @@ long LiveScan::try_lock(long grid, bool full_window)
 }
 
 /* Inverted (WMO phasing) lock acquisition, DEVIATIONS.md #19: streaming
- * twin of syncscan.cpp's find_inv_lock, mirroring try_lock's structure
- * (the two must stay byte-identical - the new fixture's live-vs-batch
- * check in cli/invphasing-test.cpp). Same window rule as try_lock;
+ * polarity-flipped mirror of try_lock, and it follows that function's
+ * structure (cli/invphasing-test.cpp). Same window rule as try_lock;
  * differences: the chain start's line must be dark-dominant
  * (sync_line_dark - aborts the search, as the batch version) and the run
  * must pass the bright floor. */
@@ -390,8 +398,7 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     unlocked_for = 0;
                 /* consecutive black-dominant lines, counted once per line
                  * even though pump() may re-enter on this one waiting for
-                 * samples. The batch twin counts it inside the inv_mode
-                 * branch, which runs on exactly these lines. */
+                 * samples: the count is per line, not per visit. */
                 if (inv_mode) {
                     if (sync_line_dark(sm, grid, p))
                         inv_dark_run++;
@@ -402,8 +409,18 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
 
             if (!locked) {
                 long E = try_lock(grid);
-                if (E == -1)
-                    return;      /* undecidable yet: wait */
+                if (E == -1) {
+                    if (finishing)
+                        E = -2;   /* end of stream: an incomplete chain is
+                                   * no chain. Without this a stream that
+                                   * ends while UNLOCKED returns here, never
+                                   * reaches the fallback below, and never
+                                   * emits its last line at all - measured
+                                   * on FAXSignal and jmh-phasing-16k, and
+                                   * phasing-test now pins it at 180 */
+                    else
+                        return;   /* undecidable yet: wait */
+                }
                 if (E >= 0) {
                     phi = (sync_anchor(sm, E, p) - grid + LINE_SAMPLES)
                           % LINE_SAMPLES;
@@ -428,7 +445,10 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                      * its leading edge).
                      * Only before the first lock of the stream: once ANY
                      * phase reference exists, the established convention
-                     * owns it (see the !locked branch in syncscan.cpp). */
+                     * owns it - a JMH-style preamble is the same white-
+                     * pulse-in-black shape, but its picture sync sits
+                     * elsewhere, and inv-locking it would throw away a
+                     * phase that was already right (phasing-test). */
                     long IE = try_inv_lock(grid);
                     if (IE == -1) {
                         if (finishing)
@@ -440,8 +460,9 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     if (IE >= 0) {
                         phi = (IE + SYNC_INV_OFFSET - grid + LINE_SAMPLES)
                               % LINE_SAMPLES;
-                        /* start measuring the line period here (batch
-                         * twin in syncscan.cpp) */
+                        /* start measuring the line period here: this is
+                         * the first anchor of the preamble that will be
+                         * coasted on (DEVIATIONS.md #19) */
                         inv_drift.reset();
                         inv_drift.add(grid / LINE_SAMPLES,
                                       IE + SYNC_INV_OFFSET);
@@ -477,8 +498,9 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                  * a real station's pulses chain at the same phase on
                  * consecutive lines, picture content does not. Skipped
                  * entirely on black-dominant lines (VMW's end-of-chart
-                 * band chains like a pulse). See the same branch in
-                 * syncscan.cpp (byte-identical). */
+                 * band chains like a pulse - its dotted ruler chains and
+                 * confirms exactly like a sync pulse, see
+                 * SYNC_ESC_CONFIRM in syncscan.h). */
                 long E = -2;
                 bool dark = sync_line_dark(sm, grid, p);
                 if (!dark) {
@@ -517,7 +539,8 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                             E = -2;         /* not proven yet */
                     }
                     /* no chain on this line: esc_prev/esc_run are kept -
-                     * see the same branch in syncscan.cpp */
+                     * a pulse embedded in photo content is missed on some
+                     * lines, and resetting would never reach the count */
                 }
                 }
                 if (E >= 0) {
@@ -539,14 +562,15 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                      * pulse, so the next chart's preamble re-seats the
                      * phase and keeps the period measurement going. The
                      * run-length gate keeps a chart's own dark bands from
-                     * re-anchoring mid-picture (batch twin). */
+                     * re-anchoring mid-picture (SYNC_PHASING_CONFIRM). */
                     if (inv_dark_run == SYNC_PHASING_CONFIRM &&
                         inv_drift.have && grid / LINE_SAMPLES - inv_drift.first
                                           > SYNC_DRIFT_MIN_PTS)
                         inv_drift.reset();   /* a NEW preamble */
                     long prev_edge = grid - LINE_SAMPLES + phi;
                     /* bracket the RAW edges, SYNC_INV_OFFSET away from the
-                     * anchor the prediction is in (batch twin) */
+                     * anchor the prediction is in - the anchor itself is
+                     * tested below, as the shape match does */
                     long ecen = expected - SYNC_INV_OFFSET;
                     while (!inv_edges.empty() &&
                            inv_edges.front() < ecen - bracket) {
@@ -571,8 +595,9 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         long per = A - prev_edge;
                         if (per >= p.min_period && per <= p.max_period) {
                             phi = (A - grid + LINE_SAMPLES) % LINE_SAMPLES;
-                            /* every preamble anchor feeds the period fit
-                             * (batch twin) */
+                            /* every preamble anchor feeds the period fit;
+                             * the estimate itself is only replaced once
+                             * the fit has enough of them */
                             inv_drift.add(grid / LINE_SAMPLES, A);
                             if (inv_drift.n >= (double)SYNC_DRIFT_MIN_PTS)
                                 inv_period = inv_drift.period();
@@ -596,16 +621,22 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                         (long)buf.size() >= grid + 2 * LINE_SAMPLES;
                     if (!dark && !finishing && !have_next)
                         return;
-                    /* hold the phase at the MEASURED line period, not at
-                     * the nominal 4000 (DEVIATIONS.md #19, batch twin) */
+                    /* Hold the phase at the MEASURED line period, not at
+                     * the nominal 4000 (DEVIATIONS.md #19). This is the
+                     * whole difference between a chart that stands square
+                     * and one sheared by the receiver's clock: nothing in
+                     * the picture can correct the phase here, so the rate
+                     * measured off the preamble is all there is. */
                     inv_phase += inv_period - (double)LINE_SAMPLES;
                     if (inv_phase < 0.0)
                         inv_phase += (double)LINE_SAMPLES;
                     else if (inv_phase >= (double)LINE_SAMPLES)
                         inv_phase -= (double)LINE_SAMPLES;
                     phi = (long)(inv_phase + 0.5) % LINE_SAMPLES;
-                    /* ... and follow a dropout off the picture's own
-                     * content (batch twin) */
+                    /* ... and follow a dropout the same way, off the
+                     * picture's own content: the rate is right but the
+                     * stream can still lose samples, and here nothing
+                     * else would ever notice (sync_content_step) */
                     if (!dark) {
                         long lag = sync_content_step(sm, grid, phi,
                                                      have_next);
@@ -639,8 +670,8 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 /* Nothing here is final until any run starting inside the
                  * bracket has ended (max_pulse) - which also covers the
                  * 3*win/2 that sync_anchor reads past a candidate, so the
-                 * anchor comes out the same as the batch scanner's
-                 * (live-test). */
+                 * anchor is computed on the same video however the stream
+                 * happened to be chunked (live-test). */
                 if (!finishing &&
                     (long)buf.size() <= expected + bracket + p.max_pulse)
                     return;       /* undecidable yet: wait */
@@ -681,12 +712,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     } else {
                         have = false;
                     }
-                    /* Whole-line step first - mirrors syncscan exactly.
-                     * It needs the NEXT line too (one line of lookahead,
-                     * syncscan.h), so hold this line back until that data
-                     * has arrived. finish() drops the wait so the last
-                     * line of a stream still comes out, exactly as the
-                     * batch scanner skips the check when the file ends. */
+                    /* A genuine step in the sync position is further than
+                     * either narrow search below can reach, so look at the
+                     * whole line first - sync_step_lock only answers when
+                     * the pulse is unambiguous and the next line agreed.
+                     * That lookahead means holding this line back until
+                     * the next one has arrived; finish() drops the wait so
+                     * the last line of a stream still comes out. */
                     if (!manual_hold) {
                         if (!finishing &&
                             (long)buf.size() < grid + 2 * LINE_SAMPLES)
@@ -704,15 +736,35 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                     bool ported = fb >= 0;
                     if (fb < 0)
                         fb = sync_fallback_search(sm, flo, fhi, p);
-                    /* hold rather than slew onto dark picture, and only on
-                     * our second chance - see the same test in
-                     * syncscan.cpp for why */
+                    /* Hold rather than slew onto dark picture. A missed
+                     * shape check does not mean the phase is wrong - it
+                     * usually means this one line's pulse edge merged or
+                     * vanished (3% of lines on himawari). Slewing toward
+                     * whatever is darkest within +-fallback_win/2 then
+                     * CORRUPTS a phase that was correct, and the next
+                     * line's prediction inherits the error: 727 of 2003
+                     * lines arrived at the shape check already 41-200
+                     * samples out. Coasting keeps the good phase and lets
+                     * the next line's shape check resume.
+                     * Same test as the chain-start floor, for the same
+                     * reason - a real pulse is absolutely black, dark
+                     * picture is not.
+                     * Only OUR dip-depth second chance is gated. The
+                     * ported tracker above already carries the original's
+                     * own bound (fb_mean/SyncThre) and earns its answers;
+                     * gating it too rejected genuine degraded pulses on
+                     * clean off-air audio and emptied the fallback path
+                     * that offair-test exists to cover. */
                     if (!ported && fb >= 0 &&
                         sync_run_mean(sm, fb, p) >= sync_dark_floor(p))
                         fb = -1;
                 }
                 if (fb >= 0) {
-                    /* one reference for every path - see syncscan.cpp.
+                    /* One reference for every path (sync_anchor): a
+                     * fallback result published at the run's leading edge
+                     * and a shape lock published at the darkest window
+                     * would otherwise tear the strip whenever tracking
+                     * switched between them.
                      * sync_anchor reads 3*win/2 past its argument, so hold
                      * the line back until that has arrived, or the live
                      * anchor would be computed on less video than the batch

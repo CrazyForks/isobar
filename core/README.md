@@ -57,7 +57,7 @@ is self-contained.
   the whole line, but only when that pulse is unambiguous — nearest rival
   at least 300 samples away and `DarkThreshold`/2 brighter, and the dark
   run it sits in is a plausible sync-pulse width (the same 100..400
-  samples `find_sync_edges` requires, which is what keeps a chart's wide
+  samples the edge detector requires, which is what keeps a chart's wide
   black margin out) — and only when the **next** line agrees with it. That one line of **lookahead** is
   what makes a whole-line search safe here, where a bare one re-locks onto
   picture content (`phasing-test`), and confirming forwards rather than
@@ -88,7 +88,7 @@ is self-contained.
   A separate **inverted-phasing path** (DEVIATIONS #19) covers WMO-style
   stations whose picture carries no per-line pulse (VMW): a white-pulse
   chain on black-dominant lines acquires the phase before the stream's
-  first lock (`find_inv_edges`/`find_inv_lock`, `sync_line_dark`,
+  first lock (`LiveScan::try_inv_lock`, `sync_line_dark`,
   `sync_bright_floor`), anchored at the pulse's leading edge
   (`SYNC_INV_OFFSET`, chosen so the line's seam falls off the page); inv_mode then holds the phase — no fallback, no
   release — at the line period measured off the preamble
@@ -102,8 +102,7 @@ is self-contained.
   `SYNC_PHASING_CONFIRM` black lines in a row, and a black-pulse
   chain confirming for `SYNC_ESC_CONFIRM` lines (never on dark lines)
   takes the decoder back out to normal tracking when a JMH-style
-  station appears. The batch and live implementations stay byte-identical
-  (`invphasing-test`, fixture `vmw-phasing-12k.wav`).
+  station appears (`invphasing-test`, fixture `vmw-phasing-12k.wav`).
 - `fft.*` — 4096-point radix-2 FFT + Hann window, magnitudes in dBFS;
   used by the GUI spectrum scope (spec section 3.3).
 - `settings.*` — settings in the original's structure (spec section 6),
@@ -166,18 +165,21 @@ is self-contained.
 - `palette.*` — the 4 palette modes (monotone / an unnamed blue→red
   ramp, not selectable in the UI / "blue ray" / "color temp") + invert,
   applied at render time (Form5 color processing).
-- `live.*` — streaming line assembly: same algorithms as `syncscan.*`
-  restructured for incremental feeds (edge decisions lag by up to
-  max_pulse; "no edge" is decidable only past expected+search_win+
-  max_pulse). Byte-identical output to the batch scanner
-  (`ctest --test-dir build -R live-test`). Everything that can be
-  literally shared between the two lives in `syncscan.h` and is called
-  from both: the moving-average step (`sync_ma_step`), the pulse-run
-  detector (`SyncRuns`, one rule for both polarities), both fallback
-  searches, the anchor/slew/step-lock/content-step helpers and the
-  phasing drift fit. What remains twinned is the per-line **state
-  machine**, because the streaming one must be able to stop mid-line and
-  wait for samples where the batch one simply reads ahead. `nudge_phase()` is the manual
+- `live.*` — **the** line-assembly state machine, written for
+  incremental feeds (edge decisions lag by up to max_pulse; "no edge" is
+  decidable only past expected+search_win+max_pulse, so `pump()` can stop
+  mid-line and resume when more samples arrive). `scan_lines()` is one
+  call of it over a finished buffer — one implementation, two entry
+  points, as `fm_decode()` is a loop over `FmDecoder`. Before v1.8.0 it
+  was two hand-synchronised implementations of the same algorithm
+  (~500 duplicated lines); merging them was verified byte-identical on
+  all eleven recordings and exposed one real bug on the way — a stream
+  ending while unlocked lost its last line. The pure functions of the
+  video stay in `syncscan.h`, where their measurements are documented:
+  the moving-average step (`sync_ma_step`), the pulse-run detector
+  (`SyncRuns`, one rule for both polarities), both fallback searches, the
+  anchor/slew/step-lock/content-step helpers and the phasing drift fit.
+  `nudge_phase()` is the manual
   sync align (docs/01 §3.2): the UI thread posts a phase shift in
   samples, `pump()` applies it at the next line boundary and keeps the
   lock so the search stays centred on the position the user gave
@@ -192,7 +194,9 @@ is self-contained.
   that cannot call it directly — the request is posted and the next
   `feed()` performs it on the audio thread, which is how the GUI's
   Scan-off keeps a reception's last line. Both paths are checked against
-  the batch decode (`live-test`).
+  a single-shot feed, so chunk boundaries cannot change a decode
+  (`live-test`, which also pins one line out per whole line window in —
+  the end-of-stream check no self-comparison can make).
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
 

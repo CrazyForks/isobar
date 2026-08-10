@@ -1,13 +1,15 @@
-/* live.h - streaming WEFAX line assembly (live audio counterpart of
- * syncscan.h).
+/* live.h - WEFAX line assembly (docs/01 sec. 3.2(7)(8)(10)).
  *
- * Same algorithms as scan_lines (docs/01 sec. 3.2(7)(8)(10)) but fed
- * incrementally: video bytes arrive in chunks from the sound card and
- * each completed 1500-px line is pushed out through a callback. Lines
- * are emitted on a fixed 4000-sample grid from stream start, rotated
- * by the tracked phase offset - including the pre-lock preamble, like
- * the original. On the same input stream it produces the same lines
- * as scan_lines (verified by cli/live-test.cpp).
+ * THE sync state machine, fed incrementally: video bytes arrive in chunks
+ * from the sound card and each completed 1500-px line is pushed out
+ * through a callback. Lines are emitted on a fixed 4000-sample grid from
+ * stream start, rotated by the tracked phase offset - including the
+ * pre-lock preamble, like the original.
+ *
+ * Batch decoding is the same class in one call: scan_lines() (syncscan.h)
+ * feeds a finished buffer and collects the lines, as fm_decode() is a loop
+ * over FmDecoder. How the stream is cut into chunks cannot change the
+ * decode - cli/live-test.cpp pins that.
  *
  * Streaming notes:
  * - a dark run is only known to be a sync pulse candidate once a
@@ -63,7 +65,7 @@ struct LiveScan {
     /* Feed n video bytes (8000 S/s). For each completed line calls
      *     line_cb(line1500, state, ud)
      * with state 0 locked / 1 corrected / 2 coasting / 3 tracking off
-     * (as scan_lines). line_cb may be null (stats still advance). */
+     * (as FaxImage). line_cb may be null (stats still advance). */
     void feed(const uint8_t *data, size_t n,
               void (*line_cb)(const uint8_t *line1500, int state, void *ud),
               void *ud);
@@ -71,8 +73,8 @@ struct LiveScan {
     /* End of stream. sync_step_lock() needs one line of lookahead, so a
      * completed line is held back until the line after it has arrived;
      * this emits the held line without that confirmation, which is what
-     * the batch scanner does when a file ends. Without it the last line
-     * of a reception never comes out. NOT thread-safe: call it on the
+     * a file ending does. Without it the last line of a reception never
+     * comes out. NOT thread-safe: call it on the
      * thread that calls feed(). */
     void finish(void (*line_cb)(const uint8_t *line1500, int state,
                                 void *ud), void *ud);
