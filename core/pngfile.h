@@ -29,8 +29,13 @@ void png_write_rgb(const std::string &path, const uint8_t *rgb, int w, int h);
 
 /* Read a PNG as w*h 1-byte/px grayscale (top row first). Accepts 8-bit
  * gray, RGB and RGBA (color is reduced to luma; alpha is dropped).
- * Throws std::runtime_error on bad signature, truncation, unsupported
- * bit depth/color type/interlace, or I/O failure. */
+ * Every CRITICAL chunk's CRC-32 is verified before its contents are used,
+ * so a file damaged in storage is reported rather than decoded to garbage
+ * (this is what makes PNG the archival auto-save format); a damaged
+ * ancillary chunk is ignored, as the spec allows.
+ * Throws std::runtime_error on bad signature, truncation, CRC mismatch,
+ * an image too large to be plausible, unsupported bit depth/color
+ * type/interlace, or I/O failure. */
 void png_read_gray(const std::string &path, std::vector<uint8_t> &gray,
                    int *w, int *h);
 

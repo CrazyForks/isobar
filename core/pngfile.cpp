@@ -12,6 +12,22 @@ namespace {
 
 const uint8_t PNG_SIG[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
 
+/* Largest set of raw (filtered) scanlines we will allocate for, in bytes.
+ * PNG allows 2^31-1 in each dimension; nothing this program loads comes
+ * anywhere near 512 MiB, and having a bound is what makes the size
+ * arithmetic below safe to trust.
+ *
+ * That arithmetic MUST be 64-bit, and the reason is a platform trap:
+ * `unsigned long` is 32 bits on MSVC and 64 on macOS/Linux. Computed in
+ * `unsigned long`, h*(1+w*bpp) WRAPS on Windows for a large enough
+ * declared size, while unfilter() indexes the same buffer in size_t,
+ * which does not - so the buffer is allocated small and written past its
+ * end. A ~1 KB file declaring 100000x42950 gray wraps to a 75,654-byte
+ * allocation and a 4.3 GB write (cli/pngfile-test.cpp builds exactly that
+ * file). zlib's own uLongf is that same 32-bit type on Windows, so the
+ * cap keeps the uncompress() call well defined too. */
+const uint64_t PNG_MAX_RAW = 512ull * 1024 * 1024;
+
 /* ---- writing ---- */
 
 void put32be(std::ostream &f, unsigned long v)
@@ -44,20 +60,23 @@ void png_write(const std::string &path, const uint8_t *px, int w, int h,
     if (w <= 0 || h <= 0)
         throw std::runtime_error("png_write: empty image");
 
-    /* raw scanlines, each prefixed with filter byte 0 (None) */
-    unsigned long raw_len = (unsigned long)h * (1 + (unsigned long)w * bpp);
-    std::vector<uint8_t> raw(raw_len);
+    /* raw scanlines, each prefixed with filter byte 0 (None). 64-bit and
+     * bounded for the same reason the reader is - see PNG_MAX_RAW. */
+    uint64_t raw_len = (uint64_t)h * (1 + (uint64_t)w * bpp);
+    if (raw_len > PNG_MAX_RAW)
+        throw std::runtime_error("png_write: image too large");
+    std::vector<uint8_t> raw((size_t)raw_len);
     for (int y = 0; y < h; y++) {
         uint8_t *dst = &raw[(size_t)y * (1 + (size_t)w * bpp)];
         dst[0] = 0;
         memcpy(dst + 1, px + (size_t)y * w * bpp, (size_t)w * bpp);
     }
 
-    uLongf zlen = compressBound(raw_len);
+    uLongf zlen = compressBound((uLong)raw_len);
     std::vector<uint8_t> z(zlen);
     /* level 9: these files are written for archiving (auto-save), where
      * size matters more than the fraction of a second the encode costs */
-    if (compress2(z.data(), &zlen, raw.data(), raw_len, 9) != Z_OK)
+    if (compress2(z.data(), &zlen, raw.data(), (uLong)raw_len, 9) != Z_OK)
         throw std::runtime_error("png_write: zlib compression failed");
 
     std::ofstream f(path.c_str(), std::ios::binary);
@@ -160,6 +179,30 @@ void png_read_gray(const std::string &path, std::vector<uint8_t> &gray,
         if (pos + 12 + len > file.size())
             throw std::runtime_error("png_read: truncated file");
         const uint8_t *data = &file[pos + 8];
+
+        /* Verify the chunk's CRC-32 over type+data (PNG spec 5.3). This is
+         * the reason PNG is the archival auto-save format: it is the only
+         * one of our three output formats that can tell a chart damaged in
+         * storage from a chart, and skipping the check threw that away -
+         * bit rot decoded to quiet garbage. Checked BEFORE the data is
+         * used, so a bad IHDR cannot set the dimensions first.
+         *
+         * Critical chunks only (bit 5 of the first type byte clear =
+         * uppercase). The spec lets a decoder carry on past a damaged
+         * ANCILLARY chunk, and we ignore those chunks' contents anyway;
+         * failing a whole file over a broken text comment would refuse
+         * images every other reader accepts. */
+        bool critical = (type[0] & 0x20) == 0;
+        if (critical) {
+            uLong got = crc32(0L, Z_NULL, 0);
+            got = crc32(got, (const Bytef *)type, 4);
+            if (len)
+                got = crc32(got, data, (uInt)len);
+            if ((uint32_t)got != (uint32_t)get32be(&file[pos + 8 + len]))
+                throw std::runtime_error(
+                    "png_read: chunk CRC mismatch (file damaged): " + path);
+        }
+
         if (!have_ihdr) {
             if (memcmp(type, "IHDR", 4) != 0 || len != 13)
                 throw std::runtime_error("png_read: bad IHDR");
@@ -174,7 +217,11 @@ void png_read_gray(const std::string &path, std::vector<uint8_t> &gray,
         } else if (memcmp(type, "IEND", 4) == 0) {
             break;
         }
-        pos += 12 + len;
+        /* (size_t), not the int literal: `len` is a 32-bit unsigned long on
+         * MSVC, and 12+len would wrap there. The bounds check above is
+         * already 64-bit so this was never reachable, but the file should
+         * carry no instance of that pattern at all - see PNG_MAX_RAW. */
+        pos += (size_t)12 + len;
     }
     if (!have_ihdr || idat.empty())
         throw std::runtime_error("png_read: no image data");
@@ -187,9 +234,13 @@ void png_read_gray(const std::string &path, std::vector<uint8_t> &gray,
             "is supported: " + path);
 
     int bpp = ctype == 0 ? 1 : (ctype == 2 ? 3 : 4);
-    unsigned long raw_len = (unsigned long)h * (1 + (unsigned long)w * bpp);
-    std::vector<uint8_t> raw(raw_len);
-    uLongf have = raw_len;
+    /* 64-bit and bounded BEFORE anything is allocated or written: the
+     * declared size comes from the file and cannot be trusted (PNG_MAX_RAW) */
+    uint64_t raw_len = (uint64_t)h * (1 + (uint64_t)w * bpp);
+    if (raw_len > PNG_MAX_RAW)
+        throw std::runtime_error("png_read: image too large: " + path);
+    std::vector<uint8_t> raw((size_t)raw_len);
+    uLongf have = (uLongf)raw_len;
     if (uncompress(raw.data(), &have, idat.data(), (uLong)idat.size()) != Z_OK
         || have != raw_len)
         throw std::runtime_error("png_read: corrupt image data");

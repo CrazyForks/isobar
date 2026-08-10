@@ -121,6 +121,7 @@
 #include "../core/settings.h"
 #include "../core/tonedetect.h"
 #include "../core/palette.h"
+#include "../core/render.h"
 #include "../core/bmpfile.h"
 #include "../core/pngfile.h"
 
@@ -455,89 +456,11 @@ static void cb_save_syn(Fl_Widget *, void *ud)
 
 /* ---- Save image (BMP export, Form6 + Form3 flow) ---- */
 
-/* box-average render of img at the given scale through the palette
- * (docs/01 sec. 4: kinds 1..3 = 3x3 / 2x2 / 1x1 renders) */
-static void render_export_rgb(const FaxImage &img, int scale,
-                              const uint8_t pal[256][3],
-                              std::vector<uint8_t> &out, int *ow, int *oh)
-{
-    const int sw = FaxImage::WIDTH;
-    const int sh = (int)img.lines.size();
-    int w = sw / scale;
-    int h = (sh + scale - 1) / scale;
-    out.assign((size_t)w * h * 3, 0);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            int sum = 0, n = 0;
-            for (int dy = 0; dy < scale; dy++)
-                for (int dx = 0; dx < scale; dx++) {
-                    int sy = y * scale + dy, sx = x * scale + dx;
-                    if (sy < sh && sx < sw) {
-                        sum += img.lines[sy][sx];
-                        n++;
-                    }
-                }
-            const uint8_t *c = pal[n ? sum / n : 0];
-            uint8_t *px = &out[((size_t)y * w + x) * 3];
-            px[0] = c[0];
-            px[1] = c[1];
-            px[2] = c[2];
-        }
-    }
-    *ow = w;
-    *oh = h;
-}
-
-/* grayscale box-average render at the given scale (the autosave PNG:
- * never colorized - invert is the one display option that applies) */
-static void render_export_gray(const FaxImage &img, int scale, int invert,
-                               std::vector<uint8_t> &out, int *ow, int *oh)
-{
-    const int sw = FaxImage::WIDTH;
-    const int sh = (int)img.lines.size();
-    int w = sw / scale;
-    int h = (sh + scale - 1) / scale;
-    out.assign((size_t)w * h, 0);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            int sum = 0, n = 0;
-            for (int dy = 0; dy < scale; dy++)
-                for (int dx = 0; dx < scale; dx++) {
-                    int sy = y * scale + dy, sx = x * scale + dx;
-                    if (sy < sh && sx < sw) {
-                        sum += img.lines[sy][sx];
-                        n++;
-                    }
-                }
-            uint8_t v = (uint8_t)(n ? sum / n : 0);
-            out[(size_t)y * w + x] = invert ? (uint8_t)(255 - v) : v;
-        }
-    }
-    *ow = w;
-    *oh = h;
-}
-
-/* 90-degree counter-clockwise rotation of a packed RGB buffer (the
- * "Land." export; the spec only says "transposed" - the direction was
- * a guess until user testing 2026-07-31 showed CW gives an upside-down
- * export of a sideways-transmitted JMH chart, CCW the upright one) */
-static void rotate90ccw(std::vector<uint8_t> &rgb, int *w, int *h)
-{
-    int sw = *w, sh = *h;
-    std::vector<uint8_t> out(rgb.size());
-    for (int y = 0; y < sh; y++)
-        for (int x = 0; x < sw; x++) {
-            int nx = y, ny = sw - 1 - x;
-            uint8_t *d = &out[((size_t)ny * sh + nx) * 3];
-            const uint8_t *s = &rgb[((size_t)y * sw + x) * 3];
-            d[0] = s[0];
-            d[1] = s[1];
-            d[2] = s[2];
-        }
-    rgb.swap(out);
-    *w = sh;
-    *h = sw;
-}
+/* The Save-image / Print / auto-save renders live in core/render.*
+ * (box average, palette, rotation, print ruler) - nothing in them is
+ * FLTK, and cli/render-test.cpp pins them headlessly. What stays here
+ * is the FLTK half: dialogs, chooser, progress window, and the
+ * Fl_Image scaling the printer driver requires. */
 
 static void cb_save_image(Fl_Widget *, void *ud)
 {
@@ -596,7 +519,7 @@ static void cb_save_image(Fl_Widget *, void *ud)
      * so the label matches the output shape (DEVIATIONS #14, user
      * decision 2026-07-31). */
     if (!app->export_portrait && app->export_kind != 0)
-        rotate90ccw(rgb, &w, &h);
+        render_rotate90ccw(rgb, &w, &h);
     try {
         if (png && app->colormode == 0) {
             /* monotone palette: write a true grayscale PNG (much smaller
@@ -620,27 +543,11 @@ static void cb_save_image(Fl_Widget *, void *ud)
 
 /* ---- Print (Button7, docs/01 sec. 4 "Print") ---- */
 
-/* the exact print bitmap: full RASTER (x = pixel in line, y = line),
- * palette applied, like the original. Renders the received
- * lines only - the original renders all 2280 lines with a black tail
+/* The print bitmap is the full RASTER (x = pixel in line, y = line) with
+ * the palette applied, like the original - which is render_export_rgb()
+ * at scale 1, box-averaging a 1x1 box being the identity. Renders the
+ * received lines only; the original renders all 2280 with a black tail
  * (deliberate difference, noted in docs/01). */
-static void render_print_rgb(const FaxImage &img, const uint8_t pal[256][3],
-                             std::vector<uint8_t> &out, int *ow, int *oh)
-{
-    const int w = FaxImage::WIDTH;
-    const int h = (int)img.lines.size();
-    out.assign((size_t)w * h * 3, 0);
-    for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++) {
-            const uint8_t *c = pal[img.lines[y][x]];
-            uint8_t *px = &out[((size_t)y * w + x) * 3];
-            px[0] = c[0];
-            px[1] = c[1];
-            px[2] = c[2];
-        }
-    *ow = w;
-    *oh = h;
-}
 
 static void cb_print(Fl_Widget *, void *ud)
 {
@@ -654,7 +561,7 @@ static void cb_print(Fl_Widget *, void *ud)
     {   /* Form2 progress dialog around the raster render (docs/01 §4) */
         ProgressScope ps(app->win->x(), app->win->y(),
                          app->win->w(), app->win->h());
-        render_print_rgb(img, app->pal, rgb, &w, &h);
+        render_export_rgb(img, 1, app->pal, rgb, &w, &h);
         ps.update(1.0);
     }
 
@@ -675,22 +582,15 @@ static void cb_print(Fl_Widget *, void *ud)
         int pw, ph;
         printer.printable_rect(&pw, &ph);
         printer.origin(0, 0);
-        /* the original stretches the FULL fixed 1500x2280 buffer over the
-         * whole page - StretchDIBits(0,0,PageWidth,PageHeight,0,0,1500,2280)
-         * (10336) - so a line is always ph/2280 tall however many were
-         * received; the tail just comes out black. We skip the black tail
-         * (see render_print_rgb), so we must scale by that same 2280-line
-         * ruler and leave the rest of the page blank. Stretching h lines
-         * over the whole page instead makes a partial reception 2280/h too
-         * tall (user's 1157-line print came out ~2x stretched, 2026-08-01).
-         * Width still fills the page, i.e. no aspect preservation, exactly
-         * like the original. The scale must be baked into the image with
-         * copy(): scaled Fl_RGB_Image::draw() is ignored by the macOS
-         * printer driver (user test 2026-07-31 printed 1:1 - only the
-         * top-left ~612x792 of the bitmap landed on the page) */
-        int th = (int)((double)ph * h / FaxImage::MAX_LINES + 0.5);
-        if (th < 1)  th = 1;
-        if (th > ph) th = ph;    /* buffer past 2280 lines (.bmp autosave) */
+        /* Scale by the original's 2280-line ruler, not by the number of
+         * lines received - see render_print_height() for why and for the
+         * stretched print that proved it. Width still fills the page,
+         * i.e. no aspect preservation, exactly like the original. The
+         * scale must be baked into the image with copy(): a scaled
+         * Fl_RGB_Image::draw() is ignored by the macOS printer driver
+         * (user test 2026-07-31 printed 1:1 - only the top-left ~612x792
+         * of the bitmap landed on the page). */
+        int th = render_print_height(ph, h);
         Fl_RGB_Image page(rgb.data(), w, h, 3);
         Fl_Image *scaled = page.copy(pw, th);
         scaled->draw(0, 0);
@@ -1868,8 +1768,8 @@ int main(int argc, char **argv)
     } else if (argc > 1 && strcmp(argv[1], "--test-palette") == 0) {
         /* DEV AID: --test-palette <mode> [invert] [file.wav]: decode
          * with the given palette pre-applied (visual palette check). */
-        app.colormode = argc > 2 ? atoi(argv[2]) : 0;
-        app.invert = argc > 3 ? atoi(argv[3]) : 0;
+        app.colormode = clampi(argc > 2 ? atoi(argv[2]) : 0, 0, 3);
+        app.invert = clampi(argc > 3 ? atoi(argv[3]) : 0, 0, 1);
         apply_palette(&app);
         start_decode(&app, argc > 4 ? argv[4] : "jmh sample.wav");
     } else if (argc > 1 && strcmp(argv[1], "--test-export") == 0) {
@@ -1877,10 +1777,10 @@ int main(int argc, char **argv)
          * decode the sample, then run the Save-image render path to
          * /tmp/isobar-export.bmp (no dialogs, exercises render + rotate
          * + BMP write). */
-        int kind = argc > 2 ? atoi(argv[2]) : 3;
-        int portrait = argc > 3 ? atoi(argv[3]) : 0;
-        app.colormode = argc > 4 ? atoi(argv[4]) : 0;
-        app.invert = argc > 5 ? atoi(argv[5]) : 0;
+        int kind = clampi(argc > 2 ? atoi(argv[2]) : 3, 0, 3);
+        int portrait = clampi(argc > 3 ? atoi(argv[3]) : 0, 0, 1);
+        app.colormode = clampi(argc > 4 ? atoi(argv[4]) : 0, 0, 3);
+        app.invert = clampi(argc > 5 ? atoi(argv[5]) : 0, 0, 1);
         apply_palette(&app);
         app.export_kind = kind;
         app.export_portrait = portrait;
@@ -1893,7 +1793,7 @@ int main(int argc, char **argv)
         render_export_rgb(app.image, scale_of[kind], app.pal, rgb, &w, &h);
         /* rotate when "Land." selected (see cb_save_image) */
         if (!portrait)
-            rotate90ccw(rgb, &w, &h);
+            render_rotate90ccw(rgb, &w, &h);
         bmp_write("/tmp/isobar-export.bmp", rgb.data(), w, h);
         fprintf(stderr, "export: kind %d portrait %d mode %d -> %dx%d\n",
                 kind, portrait, app.colormode, w, h);
@@ -1908,7 +1808,7 @@ int main(int argc, char **argv)
         }
         std::vector<uint8_t> rgb;
         int w, h;
-        render_print_rgb(app.image, app.pal, rgb, &w, &h);
+        render_export_rgb(app.image, 1, app.pal, rgb, &w, &h);
         bmp_write("/tmp/print-test.bmp", rgb.data(), w, h);
         printf("/tmp/print-test.bmp (%dx%d)\n", w, h);
         return 0;
@@ -1926,7 +1826,7 @@ int main(int argc, char **argv)
         /* DEV AID: --test-zoom N [file.syn]: load the .syn, zoom the
          * preview to level N (1 or 2) as if center-clicked at
          * (380,250), leave the window open for screenshots. */
-        int level = argc > 2 ? atoi(argv[2]) : 1;
+        int level = clampi(argc > 2 ? atoi(argv[2]) : 1, 0, 2);
         try {
             load_syn(&app, argc > 3 ? argv[3] : "out.syn");
         } catch (const std::exception &e) {
@@ -1974,8 +1874,8 @@ int main(int argc, char **argv)
         }
         app.settings.dirname = "/tmp";
         app.autosave = true;
-        app.autosave_fmt = argc > 3 ? atoi(argv[3]) : 0;
-        app.autosave_size = argc > 4 ? atoi(argv[4]) : 0;
+        app.autosave_fmt = clampi(argc > 3 ? atoi(argv[3]) : 0, 0, 2);
+        app.autosave_size = clampi(argc > 4 ? atoi(argv[4]) : 0, 0, 2);
         app.settings.cycleget = 1;
         size_t before = app.image.lines.size();
         auto_save(&app);
@@ -1997,7 +1897,7 @@ int main(int argc, char **argv)
          * arg "auto" arms Auto ctl instead of recording manually
          * (loopback auto start/stop test via playwav + BlackHole). */
         if (argc > 2)
-            app.settings.wavedev = atoi(argv[2]);
+            app.settings.wavedev = clampi(atoi(argv[2]), 0, 255);
         double secs = argc > 3 ? atof(argv[3]) : 5.0;
         bool auto_mode = argc > 4 && strcmp(argv[4], "auto") == 0;
         if (auto_mode) {

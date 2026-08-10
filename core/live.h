@@ -105,13 +105,13 @@ private:
     std::deque<long> edges;     /* detected sync-edge candidates   */
     std::deque<int> edge_dark;  /* each one's run-mean brightness;
                                    kept in lockstep with `edges`   */
-    long run_start;             /* dark-run start, -1 = not in run */
+    SyncRuns runs;              /* dark-run detector (syncscan.h)  */
     /* WMO inverted phasing (DEVIATIONS.md #19): white-pulse candidates,
        positions at each run's END (SYNC_INV_OFFSET carries it to the
        line start, which is the pulse's leading edge) */
     std::deque<long> inv_edges;
     std::deque<int> inv_bright; /* kept in lockstep with inv_edges */
-    long inv_run_start;         /* bright-run start, -1 = not in run */
+    SyncRuns inv_runs;          /* bright-run detector (syncscan.h) */
 
     /* line grid + phase (docs/01 sec. 3.2): line n covers samples
      * [n*4000, (n+1)*4000), emitted rotated by phi; tracking only
@@ -150,8 +150,6 @@ private:
      * ever_locked neighbourhood rule (the inv_mode escape's far search) */
     long try_lock(long grid, bool full_window = false);
     long try_inv_lock(long grid);   /* same, for WMO phasing pulses  */
-    long fallback(long lo, long hi) const;
-    long fallback_edge(long lo, long hi, long prev) const;
     void emit(void (*line_cb)(const uint8_t *, int, void *), void *ud,
               long grid, int how);
 };

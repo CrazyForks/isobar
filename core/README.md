@@ -37,7 +37,7 @@ is self-contained.
   long charts, DEVIATIONS #17). Sync pulses =
   dark runs with width 100–400 samples, period 3980–4020 vs. the
   previous line's edge. When the shape check fails, two fallbacks in
-  order: first `fallback_edge()`, the original's own tracker ported
+  order: first `sync_fallback_edge()`, the original's own tracker ported
   (boxcar minimum-mean over the binarised video, gated on a bright→dark
   edge, validated against the absolute `fb_mean` bound = the original's
   `SyncThre` 30, plus its `MaxJump` guard); then, only if that declines,
@@ -148,7 +148,21 @@ is self-contained.
   `.png` format; level 9, small archival files) or RGB (manual export
   with a color palette); reads 8-bit gray/RGB/RGBA, reduced to luma,
   for image input (Load data). Palette/16-bit/interlaced files are
-  refused with a clear message.
+  refused with a clear message. Every **critical chunk's CRC-32 is
+  verified** before its contents are used — the reason PNG is the
+  archival format is that it can tell a chart damaged in storage from a
+  chart, and a reader that skips the CRC throws that away (`pngfile-test`
+  flips a byte and requires the CRC to be what catches it). The
+  declared image size is bounded and computed in 64-bit: `unsigned long`
+  is 32 bits on MSVC, and the wrap let a ~1 KB file provoke a 4 GB heap
+  write there.
+- `render.*` — FaxImage → pixels for export, print and auto-save: box
+  average at the kind's scale (3×3 / 2×2 / 1×1), palette lookup,
+  grayscale + invert for the auto-save `.png`, the 90° CCW "Land."
+  rotation, and `render_print_height()` — the original's fixed 2280-line
+  ruler, which is what stops a partial reception printing stretched to
+  the full page. No FLTK, so `render-test` pins all of it headlessly;
+  the GUI keeps the dialogs and the `Fl_Image` scaling.
 - `palette.*` — the 4 palette modes (monotone / an unnamed blue→red
   ramp, not selectable in the UI / "blue ray" / "color temp") + invert,
   applied at render time (Form5 color processing).
@@ -156,7 +170,14 @@ is self-contained.
   restructured for incremental feeds (edge decisions lag by up to
   max_pulse; "no edge" is decidable only past expected+search_win+
   max_pulse). Byte-identical output to the batch scanner
-  (`ctest --test-dir build -R live-test`). `nudge_phase()` is the manual
+  (`ctest --test-dir build -R live-test`). Everything that can be
+  literally shared between the two lives in `syncscan.h` and is called
+  from both: the moving-average step (`sync_ma_step`), the pulse-run
+  detector (`SyncRuns`, one rule for both polarities), both fallback
+  searches, the anchor/slew/step-lock/content-step helpers and the
+  phasing drift fit. What remains twinned is the per-line **state
+  machine**, because the streaming one must be able to stop mid-line and
+  wait for samples where the batch one simply reads ahead. `nudge_phase()` is the manual
   sync align (docs/01 §3.2): the UI thread posts a phase shift in
   samples, `pump()` applies it at the next line boundary and keeps the
   lock so the search stays centred on the position the user gave

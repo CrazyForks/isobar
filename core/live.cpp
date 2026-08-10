@@ -22,10 +22,10 @@ void LiveScan::reset()
     acc = 0;
     edges.clear();
     edge_dark.clear();
-    run_start = -1;
+    runs.reset();
     inv_edges.clear();
     inv_bright.clear();
-    inv_run_start = -1;
+    inv_runs.reset();
     inv_mode = false;
     inv_lock_from = 0;
     esc_prev = -1;
@@ -105,47 +105,24 @@ void LiveScan::feed(const uint8_t *data, size_t n,
         uint8_t v = data[k];
         buf.push_back(v);
 
-        /* moving average, window 8 (same as syncscan) */
-        acc += v;
-        if (i >= 8)
-            acc -= buf[i - 8];
-        int m = acc / (i >= 7 ? 8 : (int)i + 1);
-        sm.push_back(m);
+        /* moving average, window 8 - the same step the batch scanner's
+         * moving_average() runs over a finished buffer (syncscan.h) */
+        sm.push_back(sync_ma_step(acc, i, v, i >= 8 ? buf[i - 8] : (uint8_t)0));
 
-        /* dark-run shape check: run end -> candidate edge */
-        bool dark = m < p.dark_th;
-        if (dark && run_start < 0)
-            run_start = (long)i;
-        else if (!dark && run_start >= 0) {
-            long len = (long)i - run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse) {
-                edges.push_back(run_start);
-                long s = 0;      /* `j`, not `k`: the feed() loop above owns
-                                  * that name, and MSVC warns (C4456) */
-                for (long j = 0; j < len; j++)
-                    s += sm[run_start + j];
-                edge_dark.push_back((int)(s / len));
-            }
-            run_start = -1;
+        /* the two run detectors, one shared rule (SyncRuns, syncscan.h):
+         * a DARK run publishes its start as a sync-pulse candidate; a
+         * BRIGHT one publishes its END as a WMO phasing candidate, which
+         * SYNC_INV_OFFSET then carries to the line start (DEVIATIONS #19) */
+        long pos;
+        int mean;
+        if (runs.step(sm, i, sm[i] < p.dark_th, p, false, &pos, &mean)) {
+            edges.push_back(pos);
+            edge_dark.push_back(mean);
         }
-
-        /* bright-run (WMO phasing pulse) candidate, DEVIATIONS.md #19:
-         * mirrors the dark-run check above with the polarity flipped;
-         * the position published is the run's END; SYNC_INV_OFFSET
-         * carries it to the line start (syncscan.cpp's twin) */
-        bool bright = m >= sync_bright_floor(p);
-        if (bright && inv_run_start < 0)
-            inv_run_start = (long)i;
-        else if (!bright && inv_run_start >= 0) {
-            long len = (long)i - inv_run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse) {
-                inv_edges.push_back((long)i);
-                long s = 0;
-                for (long j = inv_run_start; j < (long)i; j++)
-                    s += sm[j];
-                inv_bright.push_back((int)(s / len));
-            }
-            inv_run_start = -1;
+        if (inv_runs.step(sm, i, sm[i] >= sync_bright_floor(p), p, true,
+                          &pos, &mean)) {
+            inv_edges.push_back(pos);
+            inv_bright.push_back(mean);
         }
     }
     pump(line_cb, ud);
@@ -311,66 +288,6 @@ long LiveScan::try_inv_lock(long grid)
     if (grid + LINE_SAMPLES > finalized)
         return -1;
     return -2;
-}
-
-/* min-brightness fallback search over [lo, hi] (same validation as
- * syncscan) */
-/* The original's fallback tracker; see syncscan.cpp's fallback_edge, of
- * which this is the streaming twin (the two must stay byte-identical -
- * live-test). Constants are the original's compiled-in ones. */
-long LiveScan::fallback_edge(long lo, long hi, long prev) const
-{
-    const int GATE = 8, GATE_LEVEL = 128;
-    long n = (long)sm.size();
-    int win = p.fallback_win > 0 ? p.fallback_win : 160;
-    if (lo < GATE) lo = GATE;
-    if (hi > n - win) hi = n - win;
-    if (lo > hi)
-        return -1;
-
-    long best = -1;
-    int best_mean = 256;
-    for (long q = lo; q <= hi; q++) {
-        int gate = 0;
-        for (int i = 1; i <= GATE; i++)
-            gate += sm[q - i] >= p.dark_th ? 255 : 0;
-        if (gate / GATE <= GATE_LEVEL)
-            continue;
-        int mean = 0;
-        for (int i = 0; i < win; i++)
-            mean += sm[q + i] >= p.dark_th ? 255 : 0;
-        mean /= win;
-        if (mean < best_mean) {
-            best_mean = mean;
-            best = q;
-        }
-    }
-    if (best < 0 || best_mean >= p.fb_mean)
-        return -1;
-    if (ever_locked) {
-        long d = best - prev < 0 ? prev - best : best - prev;
-        if (d > p.search_win && d < LINE_SAMPLES - p.search_win)
-            return -1;
-    }
-    return best;
-}
-
-long LiveScan::fallback(long lo, long hi) const
-{
-    if (lo < 0) lo = 0;
-    if (hi >= (long)sm.size()) hi = (long)sm.size() - 1;
-    if (lo >= hi)
-        return -1;
-    long best = lo, sum = 0;
-    for (long i = lo; i <= hi; i++) {
-        sum += sm[i];
-        if (sm[i] < sm[best])
-            best = i;
-    }
-    long mean = sum / (hi - lo + 1);
-    if (sm[best] < p.dark_th && mean - sm[best] >= p.fb_thresh)
-        return best;
-    return -1;
 }
 
 void LiveScan::emit(void (*line_cb)(const uint8_t *, int, void *), void *ud,
@@ -780,11 +697,13 @@ void LiveScan::pump(void (*line_cb)(const uint8_t *, int, void *), void *ud)
                 }
                 if (fb < 0 && have) {
                     /* ported tracker first, our dip-depth search as the
-                     * second chance - mirrors syncscan exactly */
-                    fb = fallback_edge(flo, fhi, expected);
+                     * second chance - the same two functions the batch
+                     * scanner calls (syncscan.h) */
+                    fb = sync_fallback_edge(sm, flo, fhi, p, expected,
+                                            ever_locked);
                     bool ported = fb >= 0;
                     if (fb < 0)
-                        fb = fallback(flo, fhi);
+                        fb = sync_fallback_search(sm, flo, fhi, p);
                     /* hold rather than slew onto dark picture, and only on
                      * our second chance - see the same test in
                      * syncscan.cpp for why */

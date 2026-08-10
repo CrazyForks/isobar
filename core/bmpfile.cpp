@@ -106,14 +106,23 @@ void bmp_read(const std::string &path, std::vector<uint8_t> &rgb,
     int top_down = h < 0;
     if (top_down) h = -h;
     int bpp = bits / 8;
-    unsigned long stride = ((unsigned long)w * bpp + 3) & ~3UL;
-    if (data_off + stride * (unsigned long)h > file.size())
+    /* 64-bit throughout. `unsigned long` is 32 bits on MSVC and 64 on
+     * macOS/Linux, so stride*h computed in it wraps on Windows for a large
+     * enough declared size - the bounds check would then pass and the row
+     * loop below, which indexes in size_t, would read past the file buffer.
+     * (The oversized rgb.assign() happens to throw first today, but the
+     * check is what is meant to be load-bearing here, not the allocator.
+     * core/pngfile.cpp documents the same trap at PNG_MAX_RAW, where it
+     * really did bite.) */
+    uint64_t stride = ((uint64_t)w * bpp + 3) & ~(uint64_t)3;
+    if ((uint64_t)data_off + stride * (uint64_t)h > (uint64_t)file.size())
         throw std::runtime_error("bmp_read: truncated file");
 
     rgb.assign((size_t)w * h * 3, 0);
     for (long y = 0; y < h; y++) {
         long sy = top_down ? y : h - 1 - y;
-        const uint8_t *src = &file[data_off + (size_t)sy * stride];
+        const uint8_t *src =
+            &file[(size_t)((uint64_t)data_off + (uint64_t)sy * stride)];
         uint8_t *dst = &rgb[(size_t)y * w * 3];
         for (long x = 0; x < w; x++) {
             dst[3 * x]     = src[bpp * x + 2];   /* R */

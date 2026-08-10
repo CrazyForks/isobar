@@ -63,7 +63,9 @@ To build from source instead, see [Build](#build).
   otherwise), print. BMP and grayscale PNG files can also be loaded back
   as images.
 - **Auto-save** on stop tone or at max scan width: `.syn`, `.bmp`, or
-  grayscale `.png` (the small archival format).
+  grayscale `.png` (the small archival format — every chunk's CRC is
+  checked when it is read back, so a file damaged in storage is reported
+  rather than quietly decoded as a corrupt chart).
 - **KG-FAX interop**: round-trips `.syn` files (including the radix-255
   line-count encoding and palette mode/invert bits in the header), and
   reads the older legacy "Syn Fax" variant (fixed 2000×2280 body).
@@ -103,7 +105,7 @@ pulled in by the Linux/Windows packages below).
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 21 headless tests
+ctest --test-dir build        # runs the 22 headless tests
 ```
 
 Install the dependencies first:
@@ -152,7 +154,7 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.6.0 released** — working software. All core receive features are
+**v1.7.0 released** — working software. All core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = validation & release, largely
 done — two validation items still open).

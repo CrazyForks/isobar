@@ -32,55 +32,40 @@ const int DEF_FB_THRESH   = 10;     /* ours: dip depth, second chance */
  * transfers. Measured best on all three fixtures at exactly 30. */
 const int DEF_FB_MEAN     = 30;     /* = SyncThre */
 
-/* Ported fallback shape constants, hard-coded in the original with no
- * ini key (docs/01 sec. 3.2(8)). */
-const int FB_GATE       = 8;        /* dword_4F25E4 */
-const int FB_GATE_LEVEL = 128;      /* dword_4F25E8 */
-
 const int LINE_SAMPLES = 4000;   /* one 120-rpm line = 0.5 s @ 8000 S/s */
 
 /* 8-sample moving average: removes single-sample noise before the
- * dark-run shape check and the fallback brightness search. */
+ * dark-run shape check and the fallback brightness search. One step of it
+ * is sync_ma_step (syncscan.h), which LiveScan runs per arriving sample. */
 std::vector<int> moving_average(const std::vector<uint8_t> &v)
 {
     size_t n = v.size();
     std::vector<int> sm(n);
-    int acc = 0;
-    for (size_t i = 0; i < n; i++) {
-        acc += v[i];
-        if (i >= 8)
-            acc -= v[i - 8];
-        sm[i] = acc / (i >= 7 ? 8 : (int)i + 1);
-    }
+    long acc = 0;
+    for (size_t i = 0; i < n; i++)
+        sm[i] = sync_ma_step(acc, i, v[i], i >= 8 ? v[i - 8] : (uint8_t)0);
     return sm;
 }
 
 /* Collect candidate sync edges: start index of every dark run whose
  * length is a plausible sync pulse width (docs/01 sec. 3.2(7)).
  * `dark_out` (may be null) receives each run's mean brightness, which
- * find_lock uses to tell a sync pulse from picture content. */
+ * find_lock uses to tell a sync pulse from picture content.
+ * The run rule itself is SyncRuns (syncscan.h), shared with LiveScan. */
 std::vector<long> find_sync_edges(const std::vector<int> &sm,
                                   const SyncParams &p,
                                   std::vector<int> *dark_out = nullptr)
 {
     std::vector<long> edges;
-    long run_start = -1;
+    SyncRuns runs;
+    runs.reset();
     for (size_t i = 0; i < sm.size(); i++) {
-        bool dark = sm[i] < p.dark_th;
-        if (dark && run_start < 0)
-            run_start = (long)i;
-        else if (!dark && run_start >= 0) {
-            long len = (long)i - run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse) {
-                edges.push_back(run_start);
-                if (dark_out) {
-                    long s = 0;
-                    for (long k = 0; k < len; k++)
-                        s += sm[run_start + k];
-                    dark_out->push_back((int)(s / len));
-                }
-            }
-            run_start = -1;
+        long pos;
+        int mean;
+        if (runs.step(sm, i, sm[i] < p.dark_th, p, false, &pos, &mean)) {
+            edges.push_back(pos);
+            if (dark_out)
+                dark_out->push_back(mean);
         }
     }
     return edges;
@@ -119,91 +104,6 @@ size_t find_lock(const std::vector<long> &edges, const std::vector<int> &darks,
     return edges.size();
 }
 
-/* Fallback sync tracking: search [lo, hi] for the darkest position.
- * Valid if it is dark (dark_th) and the dip below the window mean is at
- * least fb_thresh. NOTE this is deliberately not the original's test -
- * it slides a boxcar over the binarised video and accepts the minimum
- * MEAN if that mean is below SyncThre (docs/01 sec. 3.2(8)). Ours is a
- * dip depth relative to the local mean, which is why fb_thresh does not
- * take SyncThre's value (DEVIATIONS.md #16). */
-long fallback_search(const std::vector<int> &sm, long lo, long hi,
-                     const SyncParams &p)
-{
-    long n = (long)sm.size();
-    if (lo < 0) lo = 0;
-    if (hi >= n) hi = n - 1;
-    if (lo >= hi)
-        return -1;
-
-    long best = lo;
-    long sum = 0;
-    for (long i = lo; i <= hi; i++) {
-        sum += sm[i];
-        if (sm[i] < sm[best])
-            best = i;
-    }
-    long mean = sum / (hi - lo + 1);
-    if (sm[best] < p.dark_th && mean - sm[best] >= p.fb_thresh)
-        return best;
-    return -1;
-}
-
-/* The original's fallback tracker, docs/01 sec. 3.2(8), in OUR reference
- * convention. It slides a boxcar of fallback_win samples over the
- * binarised video and keeps the position with the minimum mean, but only
- * where the samples just outside the window are bright - i.e. the window
- * is a dark run with a bright edge, not merely a dark patch. Valid when
- * that minimum mean is below fb_mean, an absolute bound (SyncThre), and
- * when the move from the previous position is within search_win
- * (MaxJump) or is a wrap-around the long way.
- *
- * One deliberate departure: the original gates on the samples AFTER the
- * window and publishes the window's start, so its fallback anchors the
- * dark->bright edge while its own shape check anchors the bright pulse -
- * two reference points a whole fallback_win apart, which its own jump
- * guard then rejects (docs/01 sec. 3.2(8) "pick one reference point").
- * We gate on the samples BEFORE the window and publish its start, so the
- * raw position is the bright->dark edge - the same raw reference our
- * shape check starts from; sync_anchor() then refines both to the
- * pulse's darkest-window centre, so the phase is published at one
- * consistent reference. Same mechanism, one consistent reference. */
-long fallback_edge(const std::vector<int> &sm, long lo, long hi,
-                   const SyncParams &p, long prev, bool ever_locked)
-{
-    long n = (long)sm.size();
-    int win = p.fallback_win > 0 ? p.fallback_win : 160;
-    if (lo < FB_GATE) lo = FB_GATE;
-    if (hi > n - win) hi = n - win;
-    if (lo > hi)
-        return -1;
-
-    long best = -1;
-    int best_mean = 256;
-    for (long q = lo; q <= hi; q++) {
-        int gate = 0;
-        for (int i = 1; i <= FB_GATE; i++)
-            gate += sm[q - i] >= p.dark_th ? 255 : 0;
-        if (gate / FB_GATE <= FB_GATE_LEVEL)
-            continue;            /* no bright->dark edge here */
-        int mean = 0;
-        for (int i = 0; i < win; i++)
-            mean += sm[q + i] >= p.dark_th ? 255 : 0;
-        mean /= win;
-        if (mean < best_mean) {
-            best_mean = mean;
-            best = q;
-        }
-    }
-    if (best < 0 || best_mean >= p.fb_mean)
-        return -1;
-    if (ever_locked) {
-        long d = best - prev < 0 ? prev - best : best - prev;
-        if (d > p.search_win && d < LINE_SAMPLES - p.search_win)
-            return -1;           /* jumped further than MaxJump */
-    }
-    return best;
-}
-
 } /* namespace */
 
 namespace {
@@ -221,23 +121,16 @@ std::vector<long> find_inv_edges(const std::vector<int> &sm,
                                  std::vector<int> *bright_out = nullptr)
 {
     std::vector<long> edges;
-    long run_start = -1;
+    SyncRuns runs;
+    runs.reset();
     for (size_t i = 0; i < sm.size(); i++) {
-        bool bright = sm[i] >= sync_bright_floor(p);
-        if (bright && run_start < 0)
-            run_start = (long)i;
-        else if (!bright && run_start >= 0) {
-            long len = (long)i - run_start;
-            if (len >= p.min_pulse && len <= p.max_pulse) {
-                edges.push_back((long)i);
-                if (bright_out) {
-                    long s = 0;
-                    for (long k = run_start; k < (long)i; k++)
-                        s += sm[k];
-                    bright_out->push_back((int)(s / len));
-                }
-            }
-            run_start = -1;
+        long pos;
+        int mean;
+        if (runs.step(sm, i, sm[i] >= sync_bright_floor(p), p, true,
+                      &pos, &mean)) {
+            edges.push_back(pos);
+            if (bright_out)
+                bright_out->push_back(mean);
         }
     }
     return edges;
@@ -737,10 +630,11 @@ FaxImage scan_lines(const std::vector<uint8_t> &video,
                     snapped = fb >= 0;
                 }
                 if (fb < 0 && lo <= hi) {
-                    fb = fallback_edge(sm, lo, hi, p, expected, ever_locked);
+                    fb = sync_fallback_edge(sm, lo, hi, p, expected,
+                                            ever_locked);
                     bool ported = fb >= 0;
                     if (fb < 0)
-                        fb = fallback_search(sm, lo, hi, p);
+                        fb = sync_fallback_search(sm, lo, hi, p);
                     /* Hold rather than slew onto dark picture. A missed
                      * shape check does not mean the phase is wrong - it
                      * usually means this one line's pulse edge merged or

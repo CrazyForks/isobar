@@ -30,8 +30,15 @@ void syn_write(const std::string &path, const FaxImage &img,
     int n = (int)img.lines.size();
     f.put((char)(n / 255));       /* radix-255 big-endian line count */
     f.put((char)(n % 255));
-    for (auto &line : img.lines)
+    /* WIDTH bytes are written from every line, so a short one would be an
+     * out-of-bounds read. Every FaxImage the decoder builds is WIDTH wide,
+     * but the GUI assembles its own for the rotate buttons and this is a
+     * public core entry point - check rather than trust. */
+    for (auto &line : img.lines) {
+        if ((int)line.size() != FaxImage::WIDTH)
+            throw std::runtime_error("syn_write: line is not 1500 px wide");
         f.write((const char *)line.data(), FaxImage::WIDTH);
+    }
 
     if (!f)
         throw std::runtime_error("cannot write '" + path + "'");
