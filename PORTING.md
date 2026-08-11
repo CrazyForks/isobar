@@ -10,6 +10,11 @@ independent reimplementation for interoperability; it is NOT affiliated with
 or endorsed by the KG-FAX author. See `NOTICE` for the full provenance
 statement.
 
+**Status: complete. v1.8.0 is the final release** — the goal was met and
+development stopped deliberately. If you are here to understand why, or to
+build something further, read [`README.md`](README.md) §"Where this stops,
+and why" and then [`docs/07-starting-fresh.md`](docs/07-starting-fresh.md).
+
 **Start here: [`docs/README.md`](docs/README.md)** — index of the functional
 specification and the implementation plans.
 

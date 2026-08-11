@@ -4,7 +4,18 @@ Big-picture tracker of milestones and status. This is the public map of what's
 done vs pending; a private `SESSION-LOG.md` (not published) carries the
 session-to-session journal.
 
-Legend: ✅ done · 🔶 partial · ⬜ not started
+> **This roadmap is closed. v1.8.0 (2026-08-10) is the final release.**
+> M0–M5 are done and M6 is done but for two validation items left open on
+> purpose (the golden-reference comparison, which needs hardware that can
+> run a 32-bit 2009 Windows binary, and the gappy-source `LockAfter`
+> change). Items still marked ⬜ below were **not** abandoned for lack of
+> time — the largest of them, the 1500-px line width, cannot be fixed
+> without breaking the `.syn` interoperability the project exists to
+> provide. That reasoning is in [`README.md`](README.md) §"Where this
+> stops, and why"; the hand-off to any successor project is
+> [`docs/07-starting-fresh.md`](docs/07-starting-fresh.md).
+
+Legend: ✅ done · 🔶 partial · ⬜ not started · ⬜ items are closed, not queued
 
 ## M0 — DSP core + CLI ✅
 WAV in → decoded image out, no GUI. Verified on a real JMH recording
@@ -787,8 +798,9 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   amateur-station licence no longer exist either. All known channels are
   exhausted; both bounces are documented privately outside the repo. Good-faith
   notification is satisfied and this item needs no revisiting; publicity is
-  unblocked. **Still pending:** notarize macOS .app if going broad
-  (currently ad-hoc = right-click→Open).
+  unblocked. **Not done, and now closed with the project:** notarizing the
+  macOS `.app` if going broad. It stays ad-hoc signed (right-click → Open
+  on first launch), which is stated in the README's Download section.
   Decisions locked (S11): CMake; native per-OS release formats;
   unsigned/ad-hoc macOS .app for now (Gatekeeper bypass = right-click
   → Open; upgrade to notarized later if/when publishing publicly).
