@@ -173,6 +173,7 @@ add_library(isobar_core STATIC
     core/tonedetect.cpp   core/tonedetect.h
     core/live.cpp         core/live.h
     core/resample.cpp     core/resample.h
+    core/ratefit.cpp      core/ratefit.h
     core/bmpfile.cpp      core/bmpfile.h
     core/pngfile.cpp      core/pngfile.h
     core/render.cpp       core/render.h
@@ -355,6 +356,7 @@ add_isobar_test(slew-test)
 add_isobar_test(satellite-test)
 add_isobar_test(reacq-test)
 add_isobar_test(invphasing-test)
+add_isobar_test(ratefit-test)
 
 # Self-contained synthetic/core tests (no WAV needed; the helper's
 # source-root working directory costs nothing).

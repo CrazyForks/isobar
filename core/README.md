@@ -199,6 +199,20 @@ is self-contained.
   the end-of-stream check no self-comparison can make).
 - `resample.*` — streaming anti-alias resampler (any rate → 22050 Hz,
   and up, for live capture and the `playwav` dev tool).
+- `ratefit.*` — measures a reception's true line period from the picture,
+  for receivers whose sample clock is off (a KiwiSDR without GPS or a
+  TCXO runs 80–120 ppm out, and 120 ppm skews a full chart by 244 px).
+  Folds the video modulo a trial period and maximises the variance of
+  the folded profile: at the right period every vertical feature stacks
+  up, at the wrong one they smear. `video_retime` then rescales the
+  stream so the measured period is 4000 again. Two data-calibrated
+  guards decide whether the answer is usable at all, and there is no
+  fallback constant — an unmeasurable error goes uncorrected. Normally
+  unnecessary, because WMO phasing anchors give the same rate for free
+  (`live.*`'s drift fit); this is for receptions that start mid-chart,
+  where stations without a per-line sync pulse (GYA, NMC, VMW) otherwise
+  have no clock reference at all. Opt-in: CLI `--fit-rate`
+  (`DEVIATIONS.md` #20, `ratefit-test`).
 
 GUI taps (optional callback args, CLI behavior unchanged):
 `fm_decode` can hand out each 4096-sample BPF block (scope input) and

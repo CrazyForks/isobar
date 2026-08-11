@@ -201,6 +201,40 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   decodes as one whole chart: masthead, both map panels, legend and
   time-zone box all square, the panel border dark on 100% of its rows
   (24% before) and straight through all three dropouts.
+- ✅ **Receiver clock error measured from the picture** (2026-08-10,
+  DEVIATIONS #20, `core/ratefit.*`, CLI `--fit-rate`, `ratefit-test`).
+  Nine recordings measured: a KiwiSDR's sample clock is 80–120 ppm off,
+  stable per receiver (XSG ASPN and FYCI both −92.5) but ranging −82 to
+  −637 across receivers, while JMH's non-Kiwi `FAXSignal.wav` is 0.0 —
+  so no fixed constant can serve, and none is used. Ten-segment fits
+  show the error steady across a whole reception (GYA −120 ± 5 over 11
+  min; XSG flat at −90 over 23), so one measurement per reception is
+  enough; the wild whole-file numbers are network **dropouts**, which
+  read as one bad segment with normal ones either side and are out of
+  scope here (`sync_content_step` handles those). Receptions that start
+  at the top of a chart already got this for free from the phasing fit
+  (#19) — verified independently: decoder fits −120 ppm, a fold of the
+  raw video says −120.0, residual skew 5 px over 1352 lines. The gap was
+  receptions starting **mid-chart**, where GYA/NMC/VMW give no clock
+  reference at all (they send no per-line sync pulse: JMH's 59-px black
+  strip is the exception): the same GYA audio cut to start 60 s in went
+  from −5 px of skew to +503. `--fit-rate` folds the picture to measure
+  the period, then retimes the video; that cut now comes out square.
+  Opt-in — all eleven fixtures byte-identical without the flag.
+- ⬜ **Line width is 1500 px, but IOC 576 wants π·576 ≈ 1810** — the
+  original's number, inherited (docs/01: "IOC 288/576 implied by the
+  1500-px line width, no explicit IOC constant"). Confirmed by
+  measurement, not argument: the aspect circle on the JMH test chart
+  (`jmh-kiwi-testchart.wav`) decodes 46 × 55 px, aspect **0.836**,
+  against 1500/1810 = **0.829** predicted. Every chart the program
+  produces is ~17% too narrow. Note this is an output-raster fault only
+  — sync and timing run on the 4000-sample line, so it is unrelated to
+  the clock-error work above — and note the demodulator's 1200 Hz video
+  lowpass already limits the stream to ~1200 usable px per line, so
+  widening the raster alone would correct the aspect without recovering
+  detail. Fixing it properly touches `.syn` interop (1500 bytes/line),
+  the GUI layouts, and every fixture hash. Not started; options weighed
+  in the Session 40 log.
 
 ## M6 — Validation & release 🔶
 - 🔶 Golden-reference comparison against the original — **kept open**.

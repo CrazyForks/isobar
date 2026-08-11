@@ -122,6 +122,10 @@ Install the dependencies first:
 # Decode a WAV recording to an image:
 ./build/isobar-decode recording.wav out.pgm
 
+# If the recording starts mid-chart and comes out sheared, measure the
+# receiver's clock error from the picture and correct it:
+./build/isobar-decode --fit-rate recording.wav out.pgm
+
 # Or open the GUI (then pick your radio's audio input):
 ./build/isobar-gui        # Linux / Windows
 open ./build/Isobar.app   # macOS (the GUI builds as a .app bundle)

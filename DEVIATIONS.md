@@ -379,3 +379,62 @@ Seeded 2026-07-29 per `docs/04-decision-guide.md`.
     (#16), so this brings the port's acquisition closer to the
     original's, with a different picture strategy: the original
     fallback-tracks under its MaxJump rejection, we hold.
+
+20. **The receiver's clock error can be measured from the picture
+    itself** (`--fit-rate`, added 2026-08-10, Session 40;
+    `core/ratefit.h`). The original has nothing of the kind: it assumes
+    a line is 4000 samples and a sound card that says 8000 S/s delivers
+    8000. Networked SDRs broke that assumption. A KiwiSDR has neither
+    GPS discipline nor a TCXO, so its sample clock is typically 80–120
+    ppm off, and 120 ppm is 244 px of skew across a 1352-line chart.
+
+    Measured across nine recordings the error is a stable property of a
+    given receiver — XSG ASPN and FYCI both −92.5 ppm, GYA 2324Z and
+    2300Z −120.0 and −117.5, and JMH's `FAXSignal.wav`, which never went
+    through a Kiwi, **0.0** — but it ranges −82 to −637 ppm across
+    receivers, so no fixed constant can serve. **There is deliberately
+    no "typical" fallback value anywhere in this feature:** an error
+    that cannot be measured is not corrected.
+
+    Normally it needs no measuring: WMO phasing anchors already feed a
+    least-squares period fit (#19) and the line is held at the result.
+    Verified two ways on GYA 2324Z — the decoder fits −120 ppm, an
+    independent fold of the raw video measures −120.0 ppm, and the
+    finished chart is left with 5 px of skew over 1352 lines.
+
+    That covers a reception starting at the top of a chart. It does not
+    cover one starting mid-chart, and GYA, NMC and VMW send **no
+    per-line sync pulse in the picture** (column-mean scan: JMH has a
+    solid 59-px black strip and locks 83–91%; GYA has a 5-px line, far
+    under the spec's 100-sample minimum; NMC and VMW have no dark column
+    at all), so there is then no clock reference of any kind. The same
+    GYA audio cut to start 60 s in went from 40 locked lines and −5 px
+    of skew to **0 locked and +503 px**.
+
+    `--fit-rate` measures the period from the picture instead: fold the
+    video modulo a trial period and average — at the right period every
+    vertical feature stacks up and the folded profile is sharp, at the
+    wrong one they smear and it flattens — then retime the video so the
+    measured period becomes 4000 again. On that 60-s-late cut it fits
+    −117 ppm and the chart comes out square.
+
+    Two thresholds decide whether the answer is usable, both calibrated
+    against real recordings rather than chosen (`RATEFIT_MAX_SKEW_PX`,
+    `RATEFIT_MIN_PROM`): the usable fits cost 4.6–58.4 px of residual
+    uncertainty and the two useless ones — a noise-limited chart, and
+    one broken by a network dropout — 232.6 and 305.7, so the cut sits
+    at 100. Prominence is a second, independent guard, and it is not
+    redundant: white noise produces a peak whose *width* passes the
+    first test outright, and only its flatness gives it away
+    (`ratefit-test` proves both by removal).
+
+    Dropouts are explicitly **not** in scope here. Ten-segment fits show
+    the clock holding steady across a whole reception (GYA: −140, −120,
+    −120, −120, −115, −115, −115, −120, −120, −120 over 11 minutes; XSG
+    flat at −90 for 23), while a lost chunk of audio reads as one wild
+    segment with normal ones either side (VMW: −90, −75, −75, −80, −80,
+    −75, −85, **−250**, −80). A rate correction cannot fix a phase step
+    and does not try; `sync_content_step` (#19) is what follows those.
+
+    Opt-in, and off by default: all eleven fixtures decode byte-identically
+    without the flag.

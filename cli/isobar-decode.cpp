@@ -1,6 +1,6 @@
 /* isobar-decode - decode a WEFAX audio WAV into a grayscale fax image (PGM).
  *
- * Usage: ./isobar-decode [--60] input.wav out.pgm
+ * Usage: ./isobar-decode [--60] [--fit-rate] input.wav out.pgm
  *
  * Pipeline: WAV (16-bit PCM, any rate ≥ 6000 Hz) -> 22050 Hz mono
  *           -> FM demod (8000 S/s video bytes) -> sync scan -> 1500 px lines
@@ -12,6 +12,7 @@
 #include "../core/decoder.h"
 #include "../core/syncscan.h"
 #include "../core/synfile.h"
+#include "../core/ratefit.h"
 
 #include <cctype>
 #include <cstdio>
@@ -31,12 +32,22 @@ int main(int argc, char **argv)
 {
     int arg = 1;
     bool rpm60 = false;
-    if (arg < argc && strcmp(argv[arg], "--60") == 0) {
-        rpm60 = true;
-        arg++;
+    bool fit_rate = false;
+    for (; arg < argc; arg++) {
+        if (strcmp(argv[arg], "--60") == 0)
+            rpm60 = true;
+        else if (strcmp(argv[arg], "--fit-rate") == 0)
+            fit_rate = true;
+        else
+            break;
     }
     if (argc - arg != 2) {
-        fprintf(stderr, "usage: %s [--60] input.wav out.pgm|out.syn\n",
+        fprintf(stderr,
+                "usage: %s [--60] [--fit-rate] input.wav out.pgm|out.syn\n"
+                "  --fit-rate  measure the line period from the picture and\n"
+                "              correct the receiver's clock error. For\n"
+                "              recordings that start mid-chart, where there\n"
+                "              is no phasing preamble to measure it from.\n",
                 argv[0]);
         return 2;
     }
@@ -54,6 +65,27 @@ int main(int argc, char **argv)
 
         if (rpm60)
             video = video_halve_rate(video);
+
+        /* Clock-error correction (core/ratefit.h). Measured from this
+         * recording's own picture, never assumed; if the fold curve is
+         * flat the rate is not determined and nothing is applied. */
+        if (fit_rate) {
+            RateFit rf = fit_line_period(video);
+            fprintf(stderr, "rate fit: period %.2f samples (%+.0f ppm), "
+                            "peak +-%.2f samples\n",
+                    rf.period, rf.ppm, rf.halfw);
+            if (rf.ok) {
+                video = video_retime(video, rf.period);
+                fprintf(stderr, "rate fit: applied (%+.0f px of skew "
+                                "removed over %zu lines)\n",
+                        -rf.ppm / 1e6 * 4000.0 * (video.size() / 4000.0)
+                            * 3.0 / 8.0,
+                        video.size() / 4000);
+            } else {
+                fprintf(stderr, "rate fit: NOT applied - the picture does "
+                                "not determine the rate\n");
+            }
+        }
 
         FaxImage img = scan_lines(video);
         if (img.lines.empty()) {
