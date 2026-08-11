@@ -21,10 +21,14 @@ and the implementation plans.
 | `04-decision-guide.md` | Side-by-side comparison of A vs B and the shared first milestone (DSP core). |
 | `05-gui-layout.md` | Exact GUI layout of all 10 forms (captions, coordinates, sizes), extracted from the original binary's form resources. The authoritative layout reference. |
 | `06-release-process.md` | How a version gets released, what only CI can catch, and the mistakes that have actually happened. Read before tagging. |
+| `07-starting-fresh.md` | Hand-off note: what a from-scratch WMO-standard decoder should reuse from this codebase, and what it must not inherit. Written when development stopped at v1.8.0. |
 
 ## Status
 
-Phase: **working software — v1.7.0 released**. Milestone status lives in
+Phase: **finished — v1.8.0, the final release.** The goal (a portable,
+interoperable reimplementation of KG-FAX) is met and development stops
+here; `../README.md` "Where this stops, and why" gives the reasoning, and
+`07-starting-fresh.md` hands off to any successor project. Milestone status lives in
 `../ROADMAP.md`; day-to-day state in `../SESSION-LOG.md` (private — not
 published; see "What gets published" below).
 
@@ -53,7 +57,7 @@ DEVIATIONS #14). The main preview always shows the original's column view
 stop, and on `.syn` load alike. The scanner follows the original's cadence+
 phase model: lines emit on a fixed 4000-sample grid from record start, sync
 tracking adjusts only the rotation phase. **M0–M5 done** — the receive
-workflow is complete; M6 (validation & release) is mostly done — v1.7.0
+workflow is complete; M6 (validation & release) is mostly done — v1.8.0
 released, CI green on macOS/Linux/Windows, Intel and ARM; the golden-reference
 comparison and the gappy-source `LockAfter` change stay open (`../ROADMAP.md`). **First real reception
 verified 2026-07-30** (phone speaker → MacBook mic, JMH sample). Build system

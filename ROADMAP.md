@@ -499,6 +499,31 @@ Layouts all extracted in `docs/05-gui-layout.md`; implemented with English capti
   new gcc-11 runners rejected (`size_t` used unqualified, and older
   libstdc++ does not leak it through `<vector>`). No decoder behaviour
   changed — hence a patch bump.
+  **Released v1.8.0 — one sync state machine, clock-error correction,
+  and the end (S39–S40):** the final release. Two things landed. The
+  sync layer became **one** state machine: `scan_lines()` is now a
+  wrapper over `LiveScan`, `syncscan.cpp` went 725 → 123 lines, and the
+  merge itself found a live-path bug — every reception that ended
+  unlocked had been losing its last line. Then four new off-air
+  recordings (GYA, NMC, VMW via KiwiSDR) prompted the question of
+  whether receiver **clock error** can be corrected automatically
+  without a per-receiver magic number. It can: the error is 80–120 ppm
+  on a KiwiSDR, stable within a reception and per receiver but ranging
+  −82 to −637 ppm across receivers (0.0 on a non-Kiwi recording), so it
+  is measured every time and never assumed. Receptions starting at the
+  top of a chart already got this from the phasing fit; `--fit-rate`
+  (DEVIATIONS #20, `core/ratefit.*`) covers those starting mid-chart by
+  folding the picture itself, turning a +503 px shear into a square
+  chart. ctest 22 → **23**.
+  Development **stops here, deliberately**. The next item on the list —
+  the 1500-px line width, which is neither IOC 576 (π·576 ≈ 1810) nor
+  IOC 288 (≈ 905), and leaves every image ~17% too narrow, confirmed by
+  the JMH test chart's aspect circle at 0.836 against 0.829 predicted —
+  cannot be fixed without breaking the `.syn` interoperability the
+  project exists to provide. That is the boundary between reimplementing
+  KG-FAX and implementing WMO-No. 386, and this repository has finished
+  the first. See `README.md` "Where this stops, and why" and the
+  hand-off note in `docs/07-starting-fresh.md`.
   **Released v1.7.0 — PNG, pulse-free stations, and the second audit
   (S36–S38):** two capabilities and a hardening pass. **PNG** joins
   `.syn`/`.bmp` on both sides: grayscale out for auto-save (the small

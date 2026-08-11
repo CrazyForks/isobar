@@ -105,7 +105,7 @@ pulled in by the Linux/Windows packages below).
 ```sh
 cmake -B build -S .
 cmake --build build           # builds isobar-decode, isobar-gui, tests
-ctest --test-dir build        # runs the 22 headless tests
+ctest --test-dir build        # runs the 23 headless tests
 ```
 
 Install the dependencies first:
@@ -158,7 +158,11 @@ tools/  make-icons.sh (icon regeneration) + extract_dfm.py (dev/research).
 
 ## Status
 
-**v1.7.0 released** — working software. All core receive features are
+**v1.8.0 — the final release.** The project set out to reimplement KG-FAX
+as a portable, modern program, and that is done. Development stops here;
+see [Where this stops, and why](#where-this-stops-and-why).
+
+Working software: all core receive features are
 implemented and verified on real JMH recordings; see [`ROADMAP.md`](ROADMAP.md)
 for the milestone map (M0–M5 done; M6 = validation & release, largely
 done — two validation items still open).
@@ -173,6 +177,62 @@ via GitHub Actions (`.github/workflows/`); tags `v*.*.*` produce five
 self-contained native release packages (two macOS `.dmg`s, a Windows `.zip`,
 and x86_64 + aarch64 `.AppImage`s) attached to a
 [GitHub Release](https://github.com/skgsara/isobar/releases).
+
+## Where this stops, and why
+
+Isobar is finished, and it is finished on purpose rather than abandoned.
+The goal was a faithful, portable KG-FAX — one that reads and writes its
+files, keeps its settings schema, and runs on machines the 2009 Windows
+binary never could. That works. Along the way it also grew past the
+original in the places real recordings demanded: stations that send no
+per-line sync pulse, networked-SDR audio dropouts, and receiver clock
+error (`DEVIATIONS.md` #19, #20).
+
+The next thing on the list would have broken that promise, so it was not
+done. **The line width is 1500 px, which is not the IOC 576 the standard
+asks for.** IOC 576 wants π·576 ≈ 1810 px per line; IOC 288 wants
+π·288 ≈ 905. 1500 is neither — it is the original program's number,
+inherited along with everything else, and the specification derived from
+the binary says as much: *"IOC 288/576 implied by the 1500-px line width,
+no explicit IOC constant."*
+
+This is measurable, not theoretical. The aspect-ratio circle on the JMH
+test chart decodes **46 × 55 px, aspect 0.836**, against the **0.829**
+that 1500/1810 predicts. **Every image this program produces is about 17%
+too narrow.**
+
+Three things are worth knowing before anyone treats that as a bug to fix
+here:
+
+- It is an **output-raster fault only**. Sync and timing run on the
+  4000-sample line, so it has nothing to do with the clock-error and
+  dropout work. Identical code measures 0.0 ppm of clock error on a
+  non-KiwiSDR recording and −80 to −120 ppm on KiwiSDR ones, and the test
+  chart locks 94.1% of its lines at 1500 px.
+- Correcting it properly means **breaking `.syn` interoperability**,
+  which is the compatibility promise the whole project rests on: the
+  format is 1500 bytes per line. A faithful port and a standards-correct
+  decoder are different products, and this is the boundary between them.
+- Widening the raster **alone would recover no detail**. The
+  demodulator's video lowpass is 1200 Hz, which limits the stream to
+  roughly 1200 usable pixels per line; 1500 already oversamples that.
+  True IOC 576 resolution needs the lowpass opened up too, and whether
+  an HF signal carries that detail is an open question nobody here has
+  measured.
+
+There is a second, deeper inheritance worth naming. KG-FAX's sync design
+assumes the station sends a **black sync pulse on every line**. JMH does —
+a solid 59-px strip, which locks 83–91%. GYA, NMC and VMW send nothing at
+all in the picture; a column-mean scan finds no dark column. Isobar
+handles those anyway, by holding a phase measured off the phasing
+preamble, but the assumption is still in the architecture. A decoder
+built to the WMO standard from the start would not make it.
+
+**If you want a standards-correct WEFAX decoder, start a fresh project and
+take what is useful from here** — `docs/07-starting-fresh.md` says what is
+worth reusing and what should be left behind. Reimplementing KG-FAX and
+implementing WMO-No. 386 are two different jobs, and this repository has
+finished the first one.
 
 ## License
 
