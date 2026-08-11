@@ -50,8 +50,11 @@ To build from source instead, see [Build](#build).
 ## What it does
 
 - **Decodes WEFAX** (WMO-No. 386 Part III §5): 1500/2300 Hz FM sub-carrier
-  about 1900 Hz, 60 or 120 rpm, IOC 576. IOC-selection (300 Hz) / stop
+  about 1900 Hz, 60 or 120 rpm. IOC-selection (300 Hz) / stop
   (450 Hz) tone detection arms and disarms capture automatically.
+  IOC 576 broadcasts only, and at the original program's 1500-px line
+  rather than the standard's 1810 — see
+  [Where this stops, and why](#where-this-stops-and-why).
 - **Stations without per-line sync** (WMO phasing only, e.g. VMW Wiluna):
   locks from the phasing preamble, then holds the phase through the chart
   at the line rate measured off that preamble, following stream dropouts
